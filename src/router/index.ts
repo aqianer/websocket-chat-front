@@ -43,6 +43,24 @@ const routes: RouteRecordRaw[] = [
       requiresAuth: true,
       requiresSuperAdmin: true
     }
+  },
+  {
+    path: '/knowledge-base/:id',
+    name: 'KnowledgeBaseDetail',
+    component: () => import('@/views/KnowledgeBaseDetail.vue'),
+    meta: {
+      title: '知识库详情',
+      requiresAuth: true
+    }
+  },
+  {
+    path: '/document-upload-wizard',
+    name: 'DocumentUploadWizard',
+    component: () => import('@/views/DocumentUploadWizard.vue'),
+    meta: {
+      title: '文档上传向导',
+      requiresAuth: true
+    }
   }
 ]
 

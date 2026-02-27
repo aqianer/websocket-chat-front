@@ -198,3 +198,15 @@ export interface AuditRechargeResponse {
   code: number
   msg: string
 }
+
+export interface KnowledgeBase {
+  id: number
+  name: string
+  owner: string
+  docCount: number
+  vectorDim: number
+  createTime: string
+  status: '正常' | '维护中'
+  type: 'tech' | 'business' | 'policy'
+  department: string
+}
