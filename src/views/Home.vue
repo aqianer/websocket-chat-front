@@ -51,10 +51,7 @@
               <template #title>充值管理</template>
             </el-menu-item>
 
-            <el-menu-item v-if="userStore.isSuperAdmin()" index="file-upload">
-              <el-icon><Upload /></el-icon>
-              <template #title>文件上传</template>
-            </el-menu-item>
+
 
             <el-menu-item index="knowledge-base">
               <el-icon><Reading /></el-icon>
@@ -459,6 +456,7 @@ import { useUserStore } from '@/stores/user'
 import SmartChatService from '@/components/SmartChatService.vue'
 import type { UserManageData, ConsumptionRecord, DashboardStats, KnowledgeBase } from '@/types'
 import { dashboardApi, userApi, rechargeApi } from '@/api'
+import { knowledgeBaseApi } from '@/api/knowledgeBase'
 
 const router = useRouter()
 const route = useRoute()
@@ -485,7 +483,6 @@ const menuTitleMap: Record<string, string> = {
   'user-manage': '用户管理',
   'user-query': '用户查询',
   recharge: '充值管理',
-  'file-upload': '文件上传',
   'knowledge-base': '知识库管理'
 }
 
@@ -497,74 +494,7 @@ const userPackageData = ref<any[]>([])
 const queryResultData = ref<any[]>([])
 const rechargeTableData = ref<any[]>([])
 
-const knowledgeBaseList = ref<KnowledgeBase[]>([
-  {
-    id: 1,
-    name: '技术文档库',
-    owner: '张三',
-    docCount: 1250,
-    vectorDim: 1536,
-    createTime: '2024-01-15',
-    status: '正常',
-    type: 'tech',
-    department: 'tech'
-  },
-  {
-    id: 2,
-    name: '业务流程库',
-    owner: '李四',
-    docCount: 890,
-    vectorDim: 1536,
-    createTime: '2024-02-20',
-    status: '正常',
-    type: 'business',
-    department: 'business'
-  },
-  {
-    id: 3,
-    name: '制度规范库',
-    owner: '王五',
-    docCount: 560,
-    vectorDim: 1536,
-    createTime: '2024-03-10',
-    status: '维护中',
-    type: 'policy',
-    department: 'admin'
-  },
-  {
-    id: 4,
-    name: '产品知识库',
-    owner: '赵六',
-    docCount: 2100,
-    vectorDim: 1536,
-    createTime: '2024-01-25',
-    status: '正常',
-    type: 'business',
-    department: 'business'
-  },
-  {
-    id: 5,
-    name: '开发文档库',
-    owner: '孙七',
-    docCount: 1800,
-    vectorDim: 1536,
-    createTime: '2024-02-05',
-    status: '正常',
-    type: 'tech',
-    department: 'tech'
-  },
-  {
-    id: 6,
-    name: '培训资料库',
-    owner: '周八',
-    docCount: 750,
-    vectorDim: 1536,
-    createTime: '2024-03-01',
-    status: '维护中',
-    type: 'policy',
-    department: 'admin'
-  }
-])
+const knowledgeBaseList = ref<KnowledgeBase[]>([])
 
 const kbFilterForm = ref({
   department: '',
@@ -608,12 +538,6 @@ const kbFormRules = {
 
 const handleMenuSelect = async (index: string) => {
   activeMenu.value = index
-  
-  if (index === 'file-upload') {
-    router.push({ name: 'FileUpload' })
-    return
-  }
-
   await loadMenuData(index)
 }
 
@@ -638,6 +562,7 @@ const loadMenuData = async (menu: string) => {
         await loadRechargeData()
         break
       case 'knowledge-base':
+        await loadKnowledgeBaseData()
         break
     }
   } catch (error) {
@@ -688,6 +613,15 @@ const loadRechargeData = async () => {
     rechargeTableData.value = response.data.list
   } else {
     throw new Error(response.msg || '获取充值数据失败')
+  }
+}
+
+const loadKnowledgeBaseData = async () => {
+  const response = await knowledgeBaseApi.getList()
+  if (response.code === 200) {
+    knowledgeBaseList.value = response.data.list
+  } else {
+    throw new Error(response.msg || '获取知识库数据失败')
   }
 }
 
@@ -918,47 +852,48 @@ const handleSubmitKB = async () => {
     isSubmitting.value = true
     
     if (isEditMode.value) {
-      const index = knowledgeBaseList.value.findIndex(kb => kb.name === kbForm.value.name)
-      if (index !== -1) {
-        knowledgeBaseList.value[index] = {
-          ...knowledgeBaseList.value[index],
-          name: kbForm.value.name,
-          type: kbForm.value.type as 'tech' | 'business' | 'policy',
-          owner: kbForm.value.owner,
-          department: kbForm.value.department,
-          vectorDim: kbForm.value.vectorDim
-        }
-      }
-      
-      ElNotification({
-        title: '更新成功',
-        message: `知识库"${kbForm.value.name}"更新成功`,
-        type: 'success',
-        duration: 3000,
-        icon: CircleCheck
-      })
-    } else {
-      const newKB: KnowledgeBase = {
-        id: Date.now(),
+      const response = await knowledgeBaseApi.update({
+        id: knowledgeBaseList.value.find(kb => kb.name === kbForm.value.name)?.id || 0,
         name: kbForm.value.name,
-        owner: kbForm.value.owner,
-        docCount: 0,
-        vectorDim: kbForm.value.vectorDim,
-        createTime: new Date().toISOString().split('T')[0],
-        status: '正常',
         type: kbForm.value.type as 'tech' | 'business' | 'policy',
-        department: kbForm.value.department
-      }
-      
-      knowledgeBaseList.value.unshift(newKB)
-      
-      ElNotification({
-        title: '创建成功',
-        message: `知识库"${kbForm.value.name}"创建成功`,
-        type: 'success',
-        duration: 3000,
-        icon: CircleCheck
+        owner: kbForm.value.owner,
+        department: kbForm.value.department,
+        vectorDim: kbForm.value.vectorDim
       })
+      
+      if (response.code === 200) {
+        ElNotification({
+          title: '更新成功',
+          message: `知识库"${kbForm.value.name}"更新成功`,
+          type: 'success',
+          duration: 3000,
+          icon: CircleCheck
+        })
+        await loadKnowledgeBaseData()
+      } else {
+        throw new Error(response.msg || '更新失败')
+      }
+    } else {
+      const response = await knowledgeBaseApi.create({
+        name: kbForm.value.name,
+        type: kbForm.value.type as 'tech' | 'business' | 'policy',
+        owner: kbForm.value.owner,
+        department: kbForm.value.department,
+        vectorDim: kbForm.value.vectorDim
+      })
+      
+      if (response.code === 200) {
+        ElNotification({
+          title: '创建成功',
+          message: `知识库"${kbForm.value.name}"创建成功`,
+          type: 'success',
+          duration: 3000,
+          icon: CircleCheck
+        })
+        await loadKnowledgeBaseData()
+      } else {
+        throw new Error(response.msg || '创建失败')
+      }
     }
     
     kbDialogVisible.value = false
@@ -1030,16 +965,38 @@ const handleEditKB = (kb: KnowledgeBase) => {
   kbDialogVisible.value = true
 }
 
-const handleDeleteKB = (kb: KnowledgeBase) => {
-  ElMessageBox.confirm(`确定要删除知识库"${kb.name}"吗？`, '删除确认', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
-    type: 'warning'
-  }).then(() => {
-    ElMessage.success('删除成功')
-  }).catch(() => {
-    ElMessage.info('已取消删除')
-  })
+const handleDeleteKB = async (kb: KnowledgeBase) => {
+  try {
+    await ElMessageBox.confirm(`确定要删除知识库"${kb.name}"吗？`, '删除确认', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+
+    const response = await knowledgeBaseApi.delete({ id: kb.id })
+    if (response.code === 200) {
+      ElNotification({
+        title: '删除成功',
+        message: `知识库"${kb.name}"已删除`,
+        type: 'success',
+        duration: 3000,
+        icon: CircleCheck
+      })
+      await loadKnowledgeBaseData()
+    } else {
+      throw new Error(response.msg || '删除失败')
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElNotification({
+        title: '删除失败',
+        message: '删除失败，请检查网络连接后重试',
+        type: 'error',
+        duration: 5000,
+        icon: CircleClose
+      })
+    }
+  }
 }
 
 const getKBTypeColor = (type: string) => {

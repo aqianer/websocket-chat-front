@@ -61,6 +61,15 @@ const routes: RouteRecordRaw[] = [
       title: '文档上传向导',
       requiresAuth: true
     }
+  },
+  {
+    path: '/document-list',
+    name: 'DocumentList',
+    component: () => import('@/views/DocumentList.vue'),
+    meta: {
+      title: '文档列表',
+      requiresAuth: true
+    }
   }
 ]
 

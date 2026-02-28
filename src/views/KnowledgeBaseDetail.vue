@@ -236,19 +236,20 @@ import {
   Search
 } from '@element-plus/icons-vue'
 import type { KnowledgeBase } from '@/types'
+import { knowledgeBaseApi } from '@/api/knowledgeBase'
 
 const router = useRouter()
 const route = useRoute()
 
-const kbId = route.params.id as string
+const kbId = parseInt(route.params.id as string)
 
 const kbDetail = ref<KnowledgeBase>({
-  id: 1,
-  name: '技术文档库',
-  owner: '张三',
-  docCount: 1250,
+  id: 0,
+  name: '',
+  owner: '',
+  docCount: 0,
   vectorDim: 1536,
-  createTime: '2024-01-15',
+  createTime: '',
   status: '正常',
   type: 'tech',
   department: 'tech'
@@ -265,128 +266,7 @@ interface Document {
   fileType?: string
 }
 
-const documentList = ref<Document[]>([
-  {
-    id: 1,
-    fileName: '前端开发规范.pdf',
-    uploader: '张三',
-    uploadTime: '2024-01-15 10:30:00',
-    chunkCount: 125,
-    vectorStatus: '已向量化',
-    fileSize: '2.5 MB',
-    fileType: 'PDF'
-  },
-  {
-    id: 2,
-    fileName: '后端接口文档.docx',
-    uploader: '李四',
-    uploadTime: '2024-01-16 14:20:00',
-    chunkCount: 89,
-    vectorStatus: '已向量化',
-    fileSize: '1.8 MB',
-    fileType: 'Word'
-  },
-  {
-    id: 3,
-    fileName: '测试用例模板.xlsx',
-    uploader: '王五',
-    uploadTime: '2024-01-17 09:15:00',
-    chunkCount: 56,
-    vectorStatus: '未向量化',
-    fileSize: '0.8 MB',
-    fileType: 'Excel'
-  },
-  {
-    id: 4,
-    fileName: '系统架构设计.pdf',
-    uploader: '赵六',
-    uploadTime: '2024-01-18 16:45:00',
-    chunkCount: 203,
-    vectorStatus: '失败',
-    fileSize: '3.2 MB',
-    fileType: 'PDF'
-  },
-  {
-    id: 5,
-    fileName: '部署手册.docx',
-    uploader: '孙七',
-    uploadTime: '2024-01-19 11:20:00',
-    chunkCount: 78,
-    vectorStatus: '已向量化',
-    fileSize: '1.5 MB',
-    fileType: 'Word'
-  },
-  {
-    id: 6,
-    fileName: 'API接口文档.pdf',
-    uploader: '周八',
-    uploadTime: '2024-01-20 08:30:00',
-    chunkCount: 156,
-    vectorStatus: '已向量化',
-    fileSize: '2.1 MB',
-    fileType: 'PDF'
-  },
-  {
-    id: 7,
-    fileName: '数据库设计文档.docx',
-    uploader: '吴九',
-    uploadTime: '2024-01-21 13:45:00',
-    chunkCount: 134,
-    vectorStatus: '已向量化',
-    fileSize: '1.9 MB',
-    fileType: 'Word'
-  },
-  {
-    id: 8,
-    fileName: '用户手册.pdf',
-    uploader: '郑十',
-    uploadTime: '2024-01-22 15:10:00',
-    chunkCount: 98,
-    vectorStatus: '未向量化',
-    fileSize: '2.8 MB',
-    fileType: 'PDF'
-  },
-  {
-    id: 9,
-    fileName: '安全规范.docx',
-    uploader: '钱十一',
-    uploadTime: '2024-01-23 10:20:00',
-    chunkCount: 67,
-    vectorStatus: '已向量化',
-    fileSize: '1.2 MB',
-    fileType: 'Word'
-  },
-  {
-    id: 10,
-    fileName: '性能测试报告.xlsx',
-    uploader: '孙十二',
-    uploadTime: '2024-01-24 14:30:00',
-    chunkCount: 45,
-    vectorStatus: '失败',
-    fileSize: '0.6 MB',
-    fileType: 'Excel'
-  },
-  {
-    id: 11,
-    fileName: '代码规范.pdf',
-    uploader: '李十三',
-    uploadTime: '2024-01-25 09:00:00',
-    chunkCount: 112,
-    vectorStatus: '已向量化',
-    fileSize: '2.3 MB',
-    fileType: 'PDF'
-  },
-  {
-    id: 12,
-    fileName: '需求规格说明书.docx',
-    uploader: '张十四',
-    uploadTime: '2024-01-26 11:15:00',
-    chunkCount: 189,
-    vectorStatus: '已向量化',
-    fileSize: '3.5 MB',
-    fileType: 'Word'
-  }
-])
+const documentList = ref<Document[]>([])
 
 const searchKeyword = ref('')
 const currentPage = ref(1)
@@ -452,6 +332,7 @@ const handleBack = () => {
 
 const handleSearch = () => {
   currentPage.value = 1
+  loadDocumentList()
 }
 
 const handleSelectDoc = (doc: Document) => {
@@ -462,10 +343,12 @@ const handleSelectDoc = (doc: Document) => {
 const handleSizeChange = (size: number) => {
   pageSize.value = size
   currentPage.value = 1
+  loadDocumentList()
 }
 
 const handleCurrentChange = (page: number) => {
   currentPage.value = page
+  loadDocumentList()
 }
 
 const isTextOverflow = (text: string) => {
@@ -481,88 +364,143 @@ const handleFileChange = (file: any) => {
   console.log('文件选择:', file)
 }
 
-const handleConfirmUpload = () => {
+const handleConfirmUpload = async () => {
   if (uploadFileList.value.length === 0) {
     ElMessage.warning('请选择要上传的文件')
     return
   }
   
-  ElNotification({
-    title: '上传成功',
-    message: `成功上传 ${uploadFileList.value.length} 个文件`,
-    type: 'success',
-    duration: 3000
-  })
+  try {
+    const response = await knowledgeBaseApi.uploadDocuments({
+      kbId,
+      files: uploadFileList.value.map(f => f.raw)
+    })
+    
+    if (response.code === 200) {
+      ElNotification({
+        title: '上传成功',
+        message: `成功上传 ${response.data.successCount} 个文件`,
+        type: 'success',
+        duration: 3000
+      })
+      await loadDocumentList()
+    } else {
+      throw new Error(response.msg || '上传失败')
+    }
+  } catch (error) {
+    ElNotification({
+      title: '上传失败',
+      message: '文件上传失败，请检查网络连接后重试',
+      type: 'error',
+      duration: 5000
+    })
+  }
   
   uploadDialogVisible.value = false
   uploadFileList.value = []
 }
 
-const handlePreviewChunk = () => {
-  chunkList.value = [
-    {
-      content: '这是第一段分块内容，包含了文档的主要信息...',
-      tokenCount: 256,
-      vectorStatus: '已向量化'
-    },
-    {
-      content: '这是第二段分块内容，继续描述相关内容...',
-      tokenCount: 198,
-      vectorStatus: '已向量化'
-    },
-    {
-      content: '这是第三段分块内容，补充说明细节部分...',
-      tokenCount: 312,
-      vectorStatus: '未向量化'
+const handlePreviewChunk = async () => {
+  if (!selectedDoc.value) return
+  
+  try {
+    const response = await knowledgeBaseApi.getChunkPreview(kbId, selectedDoc.value.id)
+    if (response.code === 200) {
+      chunkList.value = response.data
+      chunkPreviewVisible.value = true
+    } else {
+      throw new Error(response.msg || '获取分块预览失败')
     }
-  ]
-  chunkPreviewVisible.value = true
-}
-
-const handleReVectorize = (row: Document) => {
-  ElMessageBox.confirm(
-    `确定要重新向量化文档"${row.fileName}"吗？`,
-    '确认操作',
-    {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning'
-    }
-  ).then(() => {
+  } catch (error) {
     ElNotification({
-      title: '操作成功',
-      message: `文档"${row.fileName}"已开始重新向量化`,
-      type: 'success',
-      duration: 3000
+      title: '加载失败',
+      message: '分块预览加载失败，请检查网络连接后重试',
+      type: 'error',
+      duration: 5000
     })
-  }).catch(() => {
-    ElMessage.info('已取消操作')
-  })
+  }
 }
 
-const handleDeleteDoc = (row: Document) => {
-  ElMessageBox.confirm(
-    `确定要删除文档"${row.fileName}"吗？此操作不可恢复！`,
-    '删除确认',
-    {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning'
+const handleReVectorize = async (row: Document) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定要重新向量化文档"${row.fileName}"吗？`,
+      '确认操作',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+
+    const response = await knowledgeBaseApi.reVectorize({
+      kbId,
+      documentId: row.id
+    })
+    
+    if (response.code === 200) {
+      ElNotification({
+        title: '操作成功',
+        message: `文档"${row.fileName}"已开始重新向量化`,
+        type: 'success',
+        duration: 3000
+      })
+      await loadDocumentList()
+    } else {
+      throw new Error(response.msg || '重新向量化失败')
     }
-  ).then(() => {
-    const index = documentList.value.findIndex(doc => doc.id === row.id)
-    if (index !== -1) {
-      documentList.value.splice(index, 1)
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElNotification({
+        title: '操作失败',
+        message: '重新向量化失败，请检查网络连接后重试',
+        type: 'error',
+        duration: 5000
+      })
+    }
+  }
+}
+
+const handleDeleteDoc = async (row: Document) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除文档"${row.fileName}"吗？此操作不可恢复！`,
+      '删除确认',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+
+    const response = await knowledgeBaseApi.deleteDocument({
+      kbId,
+      documentId: row.id
+    })
+    
+    if (response.code === 200) {
       ElNotification({
         title: '删除成功',
         message: `文档"${row.fileName}"已删除`,
         type: 'success',
         duration: 3000
       })
+      selectedDoc.value = null
+      selectedDocId.value = null
+      await loadDocumentList()
+    } else {
+      throw new Error(response.msg || '删除失败')
     }
-  }).catch(() => {
-    ElMessage.info('已取消删除')
-  })
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElNotification({
+        title: '删除失败',
+        message: '删除失败，请检查网络连接后重试',
+        type: 'error',
+        duration: 5000
+      })
+    }
+  }
 }
 
 const handleSelectionChange = (selection: Document[]) => {
@@ -641,8 +579,50 @@ const getVectorStatusType = (status: string) => {
   return typeMap[status] || 'info'
 }
 
+const loadKnowledgeBaseDetail = async () => {
+  try {
+    const response = await knowledgeBaseApi.getDetail(kbId)
+    if (response.code === 200) {
+      kbDetail.value = response.data
+    } else {
+      throw new Error(response.msg || '获取知识库详情失败')
+    }
+  } catch (error) {
+    ElNotification({
+      title: '加载失败',
+      message: '知识库详情加载失败，请检查网络连接后重试',
+      type: 'error',
+      duration: 5000
+    })
+  }
+}
+
+const loadDocumentList = async () => {
+  try {
+    const response = await knowledgeBaseApi.getDocuments({
+      kbId,
+      page: currentPage.value,
+      pageSize: pageSize.value,
+      keyword: searchKeyword.value || undefined
+    })
+    if (response.code === 200) {
+      documentList.value = response.data.list
+    } else {
+      throw new Error(response.msg || '获取文档列表失败')
+    }
+  } catch (error) {
+    ElNotification({
+      title: '加载失败',
+      message: '文档列表加载失败，请检查网络连接后重试',
+      type: 'error',
+      duration: 5000
+    })
+  }
+}
+
 onMounted(() => {
-  console.log('知识库详情页加载，ID:', kbId)
+  loadKnowledgeBaseDetail()
+  loadDocumentList()
 })
 </script>
 

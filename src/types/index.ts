@@ -210,3 +210,141 @@ export interface KnowledgeBase {
   type: 'tech' | 'business' | 'policy'
   department: string
 }
+
+export interface DocumentRecord {
+  id: number
+  filename: string
+  uploadTime: string
+  status: '已向量化' | '失败' | '处理中' | '未向量化'
+  currentStep: number
+}
+
+export interface DocumentListData {
+  total: number
+  pages: number
+  current: number
+  size: number
+  records: DocumentRecord[]
+}
+
+export interface DocumentListResponse {
+  code: number
+  message: string
+  data: DocumentListData
+}
+
+export interface DocumentListRequest {
+  page: number
+  size: number
+  keyword?: string
+  sort?: string
+}
+
+export interface KnowledgeBaseListRequest {
+  page?: number
+  pageSize?: number
+  department?: string
+  owner?: string
+  type?: string
+}
+
+export interface KnowledgeBaseListResponse {
+  code: number
+  msg: string
+  data: {
+    list: KnowledgeBase[]
+    total: number
+  }
+}
+
+export interface CreateKnowledgeBaseRequest {
+  name: string
+  type: 'tech' | 'business' | 'policy'
+  owner: string
+  department: string
+  vectorDim: number
+  description?: string
+}
+
+export interface UpdateKnowledgeBaseRequest {
+  id: number
+  name?: string
+  type?: 'tech' | 'business' | 'policy'
+  owner?: string
+  department?: string
+  vectorDim?: number
+  description?: string
+}
+
+export interface DeleteKnowledgeBaseRequest {
+  id: number
+}
+
+export interface KnowledgeBaseDetailResponse {
+  code: number
+  msg: string
+  data: KnowledgeBase
+}
+
+export interface DocumentInKB {
+  id: number
+  fileName: string
+  uploader: string
+  uploadTime: string
+  chunkCount: number
+  vectorStatus: '未向量化' | '已向量化' | '失败'
+  fileSize?: string
+  fileType?: string
+}
+
+export interface DocumentListInKBRequest {
+  kbId: number
+  page: number
+  pageSize: number
+  keyword?: string
+}
+
+export interface DocumentListInKBResponse {
+  code: number
+  msg: string
+  data: {
+    list: DocumentInKB[]
+    total: number
+  }
+}
+
+export interface UploadDocumentRequest {
+  kbId: number
+  files: File[]
+}
+
+export interface UploadDocumentResponse {
+  code: number
+  msg: string
+  data: {
+    successCount: number
+    failCount: number
+  }
+}
+
+export interface DeleteDocumentRequest {
+  kbId: number
+  documentId: number
+}
+
+export interface ReVectorizeRequest {
+  kbId: number
+  documentId: number
+}
+
+export interface ChunkPreview {
+  content: string
+  tokenCount: number
+  vectorStatus: '未向量化' | '已向量化' | '失败'
+}
+
+export interface ChunkPreviewResponse {
+  code: number
+  msg: string
+  data: ChunkPreview[]
+}

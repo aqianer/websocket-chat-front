@@ -26,7 +26,7 @@
       <div class="header-right"></div>
     </div>
 
-    <div class="wizard-content">
+    <div class="wizard-content" :class="{ 'has-step-3': currentStep === 3, 'has-step-4': currentStep === 4 }">
       <div v-if="currentStep === 1" class="step-1-content">
         <div 
           class="upload-area"
@@ -169,6 +169,82 @@
           </div>
         </div>
       </div>
+
+      <div v-if="currentStep === 3" class="step-3-content">
+        <div class="preview-container">
+          <div class="left-sidebar" :class="{ 'is-collapsed': leftSidebarCollapsed }">
+            <div class="sidebar-header">
+              <span class="sidebar-title">自动分段与清洗</span>
+              <el-button 
+                class="collapse-sidebar-btn"
+                :icon="leftSidebarCollapsed ? ArrowRight : ArrowLeft"
+                circle
+                @click="toggleLeftSidebar"
+              />
+            </div>
+            <div v-show="!leftSidebarCollapsed" class="document-list">
+              <div 
+                v-for="doc in documentList"
+                :key="doc.id"
+                class="document-item"
+                :class="{ 'is-selected': selectedDocId === doc.id }"
+                @click="selectDocument(doc.id)"
+              >
+                <div class="document-info">
+                  <el-icon class="document-icon"><Document /></el-icon>
+                  <span class="document-name">{{ doc.name }}</span>
+                </div>
+                <el-tag size="small" type="warning" class="status-tag">处理中</el-tag>
+              </div>
+            </div>
+          </div>
+
+          <div class="middle-panel">
+            <div class="panel-header">
+              <span class="panel-title">原始文档预览</span>
+            </div>
+            <div class="panel-content">
+              <div v-if="selectedDocument" class="preview-text">
+                {{ selectedDocument.originalContent }}
+              </div>
+              <div v-else class="empty-state">
+                <el-icon class="empty-icon"><Document /></el-icon>
+                <span class="empty-text">请选择文档查看预览</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="right-panel">
+            <div class="panel-header">
+              <span class="panel-title">分段预览</span>
+            </div>
+            <div class="panel-content">
+              <div v-if="selectedDocument" class="preview-text">
+                <div v-if="isProcessing" class="loading-overlay">
+                  <div class="loading-spinner"></div>
+                  <span class="loading-text">正在处理分段...</span>
+                </div>
+                <div v-else class="segmented-content">
+                  {{ selectedDocument.segmentedContent }}
+                </div>
+              </div>
+              <div v-else class="empty-state">
+                <el-icon class="empty-icon"><Document /></el-icon>
+                <span class="empty-text">请选择文档查看预览</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="currentStep === 4" class="step-4-content">
+        <div class="data-processing-container">
+          <div class="processing-status">
+            <el-icon class="processing-icon"><Loading /></el-icon>
+            <span class="processing-text">数据处理中...</span>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="wizard-footer">
@@ -192,9 +268,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { ArrowLeft, UploadFilled, Document, Close, Check, ArrowDown, QuestionFilled } from '@element-plus/icons-vue'
+import { ArrowLeft, UploadFilled, Document, Close, Check, ArrowDown, QuestionFilled, Loading, ArrowRight } from '@element-plus/icons-vue'
 
 const router = useRouter()
 
@@ -217,10 +293,129 @@ const extractItems = [
 ]
 
 const segmentStrategies = [
-  { label: '自动分段与清洗', value: 'auto', desc: '自动分段与预处理规则' },
-  { label: '自定义', value: 'custom', desc: '自定义分段规则、分段长度及预处理规则' },
-  { label: '按层级分段', value: 'hierarchy', desc: '按照文档层级结构分段，将文档转化为有层级信息的树结构' }
+  { label: '自动分段与清洗', value: 'auto' as const, desc: '自动分段与预处理规则' },
+  { label: '自定义', value: 'custom' as const, desc: '自定义分段规则、分段长度及预处理规则' },
+  { label: '按层级分段', value: 'hierarchy' as const, desc: '按照文档层级结构分段，将文档转化为有层级信息的树结构' }
 ]
+
+interface DocumentItem {
+  id: number
+  name: string
+  originalContent: string
+  segmentedContent: string
+  status: 'processing' | 'completed' | 'failed'
+}
+
+const documentList = ref<DocumentItem[]>([
+  {
+    id: 1,
+    name: 'requirements.txt',
+    originalContent: `# 项目依赖
+
+## 前端依赖
+- vue@3.4.0
+- element-plus@2.5.0
+- vue-router@4.6.4
+- pinia@3.0.4
+- axios@1.6.0
+
+## 后端依赖
+- spring-boot-starter-web
+- spring-boot-starter-data-jpa
+- mysql-connector-java
+- lombok
+
+## 开发工具
+- vite@5.0.0
+- typescript@5.3.3
+- vitest@1.0.0`,
+    segmentedContent: `# 项目依赖
+
+## 前端依赖
+- vue@3.4.0
+- element-plus@2.5.0
+- vue-router@4.6.4
+- pinia@3.0.4
+- axios@1.6.0
+
+## 后端依赖
+- spring-boot-starter-web
+- spring-boot-starter-data-jpa
+- mysql-connector-java
+- lombok
+
+## 开发工具
+- vite@5.0.0
+- typescript@5.3.3
+- vitest@1.0.0`,
+    status: 'processing'
+  },
+  {
+    id: 2,
+    name: '融合计费系统全量业务文档.md',
+    originalContent: `# 融合计费系统业务文档
+
+## 1. 系统概述
+融合计费系统是一个综合性的计费管理平台，支持多种计费模式和业务场景。
+
+## 2. 核心功能
+- 用户管理
+- 套餐管理
+- 计费规则配置
+- 账单生成
+- 充值管理
+- 报表统计
+
+## 3. 业务流程
+1. 用户注册
+2. 选择套餐
+3. 充值
+4. 使用服务
+5. 生成账单
+6. 缴费
+
+## 4. 技术架构
+- 前端：Vue3 + Element Plus
+- 后端：Spring Boot
+- 数据库：MySQL
+- 缓存：Redis`,
+    segmentedContent: `# 融合计费系统业务文档
+
+## 1. 系统概述
+融合计费系统是一个综合性的计费管理平台，支持多种计费模式和业务场景。
+
+## 2. 核心功能
+- 用户管理
+- 套餐管理
+- 计费规则配置
+- 账单生成
+- 充值管理
+- 报表统计
+
+## 3. 业务流程
+1. 用户注册
+2. 选择套餐
+3. 充值
+4. 使用服务
+5. 生成账单
+6. 缴费
+
+## 4. 技术架构
+- 前端：Vue3 + Element Plus
+- 后端：Spring Boot
+- 数据库：MySQL
+- 缓存：Redis`,
+    status: 'processing'
+  }
+])
+
+const selectedDocId = ref<number | null>(null)
+const leftSidebarCollapsed = ref(false)
+const isProcessing = ref(false)
+
+const selectedDocument = computed(() => {
+  return documentList.value.find(doc => doc.id === selectedDocId.value) || null
+})
 
 const handleBack = () => {
   router.back()
@@ -306,8 +501,12 @@ const handlePrevStep = () => {
 const handleNextStep = () => {
   if (currentStep.value < 4) {
     currentStep.value++
+    if (currentStep.value === 3 && selectedDocId.value === null) {
+      selectedDocId.value = documentList.value[0]?.id || null
+    }
   } else {
     console.log('完成上传流程')
+    router.push({ name: 'Home' })
   }
 }
 
@@ -334,6 +533,19 @@ const toggleExtractItem = (value: string) => {
   } else {
     extractContent.value.push(value)
   }
+}
+
+const selectDocument = (id: number) => {
+  selectedDocId.value = id
+  isProcessing.value = true
+  
+  setTimeout(() => {
+    isProcessing.value = false
+  }, 2000)
+}
+
+const toggleLeftSidebar = () => {
+  leftSidebarCollapsed.value = !leftSidebarCollapsed.value
 }
 </script>
 
@@ -446,8 +658,29 @@ const toggleExtractItem = (value: string) => {
   flex: 1;
   display: flex;
   flex-direction: column;
+  padding: 80px 24px 80px;
+  overflow: hidden;
+}
+
+.wizard-content.has-step-3,
+.wizard-content.has-step-4 {
+  padding: 64px 0 72px;
+}
+
+.step-1-content,
+.step-2-content {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  padding: 100px 24px 80px;
+}
+
+.step-3-content,
+.step-4-content {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .step-1-content {
@@ -1019,6 +1252,344 @@ const toggleExtractItem = (value: string) => {
   }
 
   .filter-placeholder {
+    font-size: 13px;
+  }
+}
+
+.step-3-content {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.preview-container {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  gap: 0;
+}
+
+.left-sidebar {
+  width: 280px;
+  background-color: white;
+  border-right: 1px solid #e4e7ed;
+  display: flex;
+  flex-direction: column;
+  transition: width 0.3s ease;
+  flex-shrink: 0;
+}
+
+.left-sidebar.is-collapsed {
+  width: 0;
+  overflow: hidden;
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e4e7ed;
+  background-color: #fafafa;
+}
+
+.sidebar-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.collapse-sidebar-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: white;
+  border: 1px solid #dcdfe6;
+  transition: all 0.3s;
+  flex-shrink: 0;
+}
+
+.collapse-sidebar-btn:hover {
+  background-color: #409eff;
+  border-color: #409eff;
+  color: white;
+}
+
+.document-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 0;
+}
+
+.document-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  border-left: 3px solid transparent;
+}
+
+.document-item:hover {
+  background-color: #f5f7fa;
+}
+
+.document-item.is-selected {
+  background-color: #ecf5ff;
+  border-left-color: #409eff;
+}
+
+.document-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.document-icon {
+  font-size: 18px;
+  color: #409eff;
+  flex-shrink: 0;
+}
+
+.document-name {
+  font-size: 14px;
+  color: #303133;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.status-tag {
+  flex-shrink: 0;
+  font-size: 12px;
+}
+
+.middle-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background-color: white;
+  border-right: 1px solid #e4e7ed;
+  min-width: 0;
+}
+
+.right-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background-color: white;
+  min-width: 0;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e4e7ed;
+  background-color: #fafafa;
+}
+
+.panel-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.panel-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  background-color: #ffffff;
+}
+
+.preview-text {
+  font-size: 14px;
+  line-height: 1.8;
+  color: #303133;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  min-height: 100%;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #909399;
+}
+
+.empty-icon {
+  font-size: 64px;
+  color: #dcdfe6;
+  margin-bottom: 16px;
+}
+
+.empty-text {
+  font-size: 14px;
+  color: #909399;
+}
+
+.loading-overlay {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 16px;
+}
+
+.loading-spinner {
+  width: 48px;
+  height: 48px;
+  border: 3px solid #e4e7ed;
+  border-top-color: #409eff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loading-text {
+  font-size: 14px;
+  color: #909399;
+}
+
+.segmented-content {
+  font-size: 14px;
+  line-height: 1.8;
+  color: #303133;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.step-4-content {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 100px 24px 80px;
+}
+
+.data-processing-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+
+.processing-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.processing-icon {
+  font-size: 64px;
+  color: #409eff;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(1.1);
+  }
+}
+
+.processing-text {
+  font-size: 18px;
+  font-weight: 500;
+  color: #303133;
+}
+
+@media (max-width: 768px) {
+  .preview-container {
+    flex-direction: column;
+  }
+
+  .left-sidebar {
+    width: 100%;
+    max-height: 200px;
+    border-right: none;
+    border-bottom: 1px solid #e4e7ed;
+  }
+
+  .left-sidebar.is-collapsed {
+    width: 100%;
+    max-height: 48px;
+  }
+
+  .document-list {
+    max-height: 150px;
+  }
+
+  .middle-panel,
+  .right-panel {
+    min-height: 300px;
+  }
+
+  .panel-content {
+    padding: 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  .sidebar-header {
+    padding: 12px 16px;
+  }
+
+  .sidebar-title {
+    font-size: 14px;
+  }
+
+  .document-item {
+    padding: 10px 16px;
+  }
+
+  .document-name {
+    font-size: 13px;
+  }
+
+  .panel-header {
+    padding: 12px 16px;
+  }
+
+  .panel-title {
+    font-size: 14px;
+  }
+
+  .panel-content {
+    padding: 12px;
+  }
+
+  .preview-text {
+    font-size: 13px;
+  }
+
+  .loading-spinner {
+    width: 40px;
+    height: 40px;
+  }
+
+  .loading-text {
     font-size: 13px;
   }
 }

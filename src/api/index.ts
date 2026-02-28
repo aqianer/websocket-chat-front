@@ -9,7 +9,22 @@ import type {
   QueryUserResponse,
   RechargeListResponse,
   AuditRechargeRequest,
-  AuditRechargeResponse
+  AuditRechargeResponse,
+  DocumentListRequest,
+  DocumentListResponse,
+  KnowledgeBaseListRequest,
+  KnowledgeBaseListResponse,
+  CreateKnowledgeBaseRequest,
+  UpdateKnowledgeBaseRequest,
+  DeleteKnowledgeBaseRequest,
+  KnowledgeBaseDetailResponse,
+  DocumentListInKBRequest,
+  DocumentListInKBResponse,
+  UploadDocumentRequest,
+  UploadDocumentResponse,
+  DeleteDocumentRequest,
+  ReVectorizeRequest,
+  ChunkPreviewResponse
 } from '@/types'
 
 const BASE_URL = '/api'
@@ -145,6 +160,20 @@ export const rechargeApi = {
     const response = await api.post<AuditRechargeResponse>('/recharge/audit', data)
     cache.clearByPrefix('recharge')
     cache.clearByPrefix('dashboard')
+    return response.data
+  }
+}
+
+export const documentApi = {
+  getList: async (params: DocumentListRequest, useCache: boolean = false): Promise<DocumentListResponse> => {
+    const cacheKey = `documents:list:${JSON.stringify(params)}`
+    
+    if (useCache && cache.has(cacheKey)) {
+      return cache.get(cacheKey)
+    }
+
+    const response = await api.get<DocumentListResponse>('/v1/documents', { params })
+    cache.set(cacheKey, response.data, CACHE_TTL.SHORT)
     return response.data
   }
 }
