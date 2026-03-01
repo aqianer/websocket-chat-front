@@ -57,16 +57,38 @@
         <div v-if="selectedFiles.length > 0" class="selected-files">
           <div class="files-header">
             <span class="files-title">已选择 {{ selectedFiles.length }} 个文件</span>
-            <el-button size="small" text @click="clearFiles">清空</el-button>
+            <el-button size="small" text @click="clearFiles" :disabled="isUploading">清空</el-button>
+          </div>
+          <div v-if="uploadError" class="upload-error">
+            <el-icon><CircleClose /></el-icon>
+            <span>{{ uploadError }}</span>
           </div>
           <div class="files-list">
-            <div v-for="(file, index) in selectedFiles" :key="index" class="file-item">
-              <el-icon class="file-icon"><Document /></el-icon>
-              <span class="file-name">{{ file.name }}</span>
-              <span class="file-size">{{ formatFileSize(file.size) }}</span>
-              <el-button size="small" text @click="removeFile(index)">
+            <div v-for="(fileItem, index) in selectedFiles" :key="index" class="file-item">
+              <el-icon class="file-icon">
+                <component :is="getFileStatusIcon(fileItem.status)" />
+              </el-icon>
+              <div class="file-info">
+                <span class="file-name">{{ fileItem.name }}</span>
+                <span class="file-size">{{ formatFileSize(fileItem.size) }}</span>
+                <div v-if="fileItem.status === 'uploading' || fileItem.status === 'pending'" class="file-progress">
+                  <el-progress :percentage="fileItem.progress" :stroke-width="4" :show-text="false" />
+                  <span class="progress-text">{{ fileItem.progress }}%</span>
+                </div>
+                <div v-if="fileItem.status === 'error'" class="file-error">
+                  <span class="error-message">{{ fileItem.errorMessage }}</span>
+                </div>
+              </div>
+              <el-button 
+                size="small" 
+                text 
+                @click="removeFile(index)"
+                :disabled="isUploading"
+                v-if="fileItem.status !== 'success'"
+              >
                 <el-icon><Close /></el-icon>
               </el-button>
+              <el-tag v-else size="small" type="success">上传成功</el-tag>
             </div>
           </div>
         </div>
@@ -258,25 +280,44 @@
       <el-button 
         type="primary" 
         :disabled="currentStep === 1 && selectedFiles.length === 0"
+        :loading="isUploading"
         @click="handleNextStep"
         class="next-button"
       >
-        {{ currentStep === 4 ? '完成' : '下一步' }}
+        {{ isUploading ? '上传中...' : (currentStep === 4 ? '完成' : '下一步') }}
       </el-button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { useRouter } from 'vue-router'
-import { ArrowLeft, UploadFilled, Document, Close, Check, ArrowDown, QuestionFilled, Loading, ArrowRight } from '@element-plus/icons-vue'
+import { ref, computed, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
+import { ArrowLeft, UploadFilled, Document, Close, Check, ArrowDown, QuestionFilled, Loading, ArrowRight, CircleClose, CircleCheck } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import { useUserStore } from '@/stores/user'
+import axios from 'axios'
 
 const router = useRouter()
+const route = useRoute()
+const userStore = useUserStore()
 
 const steps = ['上传', '创建设置', '分段预览', '数据处理']
 const currentStep = ref(1)
-const selectedFiles = ref<File[]>([])
+const isUploading = ref(false)
+const uploadError = ref('')
+const knowledgeBaseId = ref<number | null>(null)
+
+interface FileItem {
+  file: File
+  name: string
+  size: number
+  progress: number
+  status: 'pending' | 'uploading' | 'success' | 'error'
+  errorMessage?: string
+}
+
+const selectedFiles = ref<FileItem[]>([])
 const isDragOver = ref(false)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 
@@ -456,31 +497,39 @@ const addFiles = (files: File[]) => {
   const maxFiles = 300
 
   if (selectedFiles.value.length + files.length > maxFiles) {
-    alert(`最多只能上传 ${maxFiles} 个文件`)
+    ElMessage.warning(`最多只能上传 ${maxFiles} 个文件`)
     return
   }
 
   files.forEach(file => {
     const extension = '.' + file.name.split('.').pop()?.toLowerCase()
     if (!allowedExtensions.includes(extension)) {
-      alert(`不支持的文件类型：${file.name}`)
+      ElMessage.error(`不支持的文件类型：${file.name}`)
       return
     }
 
     if (file.size > maxSize) {
-      alert(`文件大小超过限制：${file.name}（最大100MB）`)
+      ElMessage.error(`文件大小超过限制：${file.name}（最大100MB）`)
       return
     }
 
-    selectedFiles.value.push(file)
+    selectedFiles.value.push({
+      file,
+      name: file.name,
+      size: file.size,
+      progress: 0,
+      status: 'pending'
+    })
   })
 }
 
 const removeFile = (index: number) => {
+  if (isUploading.value) return
   selectedFiles.value.splice(index, 1)
 }
 
 const clearFiles = () => {
+  if (isUploading.value) return
   selectedFiles.value = []
 }
 
@@ -498,8 +547,20 @@ const handlePrevStep = () => {
   }
 }
 
-const handleNextStep = () => {
-  if (currentStep.value < 4) {
+const handleNextStep = async () => {
+  console.log('当前步骤:', currentStep.value)
+  console.log('已选择文件数量:', selectedFiles.value.length)
+  console.log('知识库ID:', knowledgeBaseId.value)
+
+  if (currentStep.value === 1) {
+    if (selectedFiles.value.length === 0) {
+      ElMessage.warning('请先选择要上传的文件')
+      return
+    }
+
+    console.log('开始批量上传...')
+    await handleBatchUpload()
+  } else if (currentStep.value < 4) {
     currentStep.value++
     if (currentStep.value === 3 && selectedDocId.value === null) {
       selectedDocId.value = documentList.value[0]?.id || null
@@ -507,6 +568,92 @@ const handleNextStep = () => {
   } else {
     console.log('完成上传流程')
     router.push({ name: 'Home' })
+  }
+}
+
+const handleBatchUpload = async () => {
+  console.log('handleBatchUpload 开始执行')
+  console.log('selectedFiles.value:', selectedFiles.value)
+  console.log('selectedFiles.value.length:', selectedFiles.value.length)
+
+  if (selectedFiles.value.length === 0) {
+    console.warn('文件列表为空，阻止上传')
+    ElMessage.warning('请先选择要上传的文件')
+    return
+  }
+
+  console.log('knowledgeBaseId.value:', knowledgeBaseId.value)
+
+  if (!knowledgeBaseId.value) {
+    console.warn('知识库ID为空，使用默认值')
+    ElMessage.warning('未指定知识库，将使用默认知识库')
+    knowledgeBaseId.value = 1
+  }
+
+  console.log('开始设置上传状态...')
+  isUploading.value = true
+  uploadError.value = ''
+
+  const formData = new FormData()
+  selectedFiles.value.forEach((fileItem) => {
+    formData.append('files[]', fileItem.file)
+  })
+  console.log('FormData 已创建，文件数量:', selectedFiles.value.length)
+
+  const batchConfig = {
+    splitStrategy: segmentStrategy.value,
+    language: 'zh-CN',
+    knowledgeBaseId: knowledgeBaseId.value
+  }
+  formData.append('batchConfig', JSON.stringify(batchConfig))
+  console.log('batchConfig:', JSON.stringify(batchConfig))
+
+  try {
+    console.log('开始发送请求到 /api/v1/documents/upload')
+    const response = await axios.post('/api/v1/documents/upload', formData, {
+      headers: {
+        'Authorization': `Bearer ${userStore.token}`,
+        'Content-Type': 'multipart/form-data'
+      },
+      onUploadProgress: (progressEvent) => {
+        if (progressEvent.total) {
+          const overallProgress = Math.round((progressEvent.loaded * 100) / progressEvent.total)
+          selectedFiles.value.forEach(fileItem => {
+            if (fileItem.status === 'uploading' || fileItem.status === 'pending') {
+              fileItem.progress = overallProgress
+              fileItem.status = 'uploading'
+            }
+          })
+        }
+      }
+    })
+
+    console.log('收到响应:', response.data)
+
+    if (response.data.code === 200) {
+      selectedFiles.value.forEach(fileItem => {
+        fileItem.progress = 100
+        fileItem.status = 'success'
+      })
+
+      ElMessage.success(`成功上传 ${selectedFiles.value.length} 个文件`)
+      currentStep.value = 2
+    } else {
+      throw new Error(response.data.msg || '上传失败')
+    }
+  } catch (error: any) {
+    console.error('上传失败:', error)
+    uploadError.value = '文件上传失败，请重试'
+    selectedFiles.value.forEach(fileItem => {
+      if (fileItem.status !== 'success') {
+        fileItem.status = 'error'
+        fileItem.errorMessage = error.message || '上传失败'
+      }
+    })
+    ElMessage.error(uploadError.value)
+  } finally {
+    console.log('上传流程结束，重置上传状态')
+    isUploading.value = false
   }
 }
 
@@ -547,6 +694,64 @@ const selectDocument = (id: number) => {
 const toggleLeftSidebar = () => {
   leftSidebarCollapsed.value = !leftSidebarCollapsed.value
 }
+
+const getFileStatusIcon = (status: string) => {
+  switch (status) {
+    case 'success':
+      return CircleCheck
+    case 'error':
+      return CircleClose
+    case 'uploading':
+      return Loading
+    default:
+      return Document
+  }
+}
+
+onMounted(() => {
+  const kbId = route.params.kbId as string | undefined
+  console.log('路由参数 kbId:', kbId)
+  if (kbId) {
+    knowledgeBaseId.value = parseInt(kbId, 10)
+    console.log('解析后的知识库ID:', knowledgeBaseId.value)
+  } else {
+    console.warn('未提供知识库ID参数')
+  }
+
+  const documentId = route.query.documentId as string | undefined
+  const step = route.query.step as string | undefined
+  const chunkData = route.query.chunkData as string | undefined
+
+  if (documentId && step) {
+    console.log('现有文档模式 - 文档ID:', documentId, '步骤:', step)
+    
+    if (chunkData) {
+      try {
+        const parsedChunkData = JSON.parse(chunkData)
+        console.log('解析的分块数据:', parsedChunkData)
+        
+        const existingDoc = {
+          id: parseInt(documentId),
+          name: `文档_${documentId}`,
+          originalContent: '已上传文档内容',
+          segmentedContent: parsedChunkData.map((chunk: any) => chunk.content).join('\n\n'),
+          status: 'completed' as const
+        }
+        
+        documentList.value = [existingDoc]
+        selectedDocId.value = existingDoc.id
+      } catch (error) {
+        console.error('解析分块数据失败:', error)
+      }
+    }
+
+    const stepNumber = parseInt(step, 10)
+    if (stepNumber >= 1 && stepNumber <= 4) {
+      currentStep.value = stepNumber
+      console.log('设置当前步骤为:', currentStep.value)
+    }
+  }
+})
 </script>
 
 <style scoped>
@@ -996,6 +1201,21 @@ const toggleLeftSidebar = () => {
   border-bottom: 1px solid #e4e7ed;
 }
 
+.upload-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background-color: #fef0f0;
+  color: #f56c6c;
+  font-size: 14px;
+  border-bottom: 1px solid #fde2e2;
+}
+
+.upload-error .el-icon {
+  font-size: 16px;
+}
+
 .files-title {
   font-size: 14px;
   font-weight: 500;
@@ -1009,7 +1229,7 @@ const toggleLeftSidebar = () => {
 
 .file-item {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
   padding: 12px 16px;
   border-bottom: 1px solid #f0f0f0;
@@ -1028,10 +1248,18 @@ const toggleLeftSidebar = () => {
   font-size: 20px;
   color: #409eff;
   flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.file-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .file-name {
-  flex: 1;
   font-size: 14px;
   color: #303133;
   overflow: hidden;
@@ -1043,6 +1271,35 @@ const toggleLeftSidebar = () => {
   font-size: 12px;
   color: #909399;
   flex-shrink: 0;
+}
+
+.file-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.file-progress .el-progress {
+  flex: 1;
+  min-width: 0;
+}
+
+.progress-text {
+  font-size: 12px;
+  color: #409eff;
+  font-weight: 500;
+  min-width: 40px;
+  text-align: right;
+}
+
+.file-error {
+  margin-top: 4px;
+}
+
+.error-message {
+  font-size: 12px;
+  color: #f56c6c;
 }
 
 .wizard-footer {

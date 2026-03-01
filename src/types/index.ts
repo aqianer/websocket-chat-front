@@ -348,3 +348,22 @@ export interface ChunkPreviewResponse {
   msg: string
   data: ChunkPreview[]
 }
+
+export interface DocumentUploadWizardRequest {
+  kbId: number
+  documentId: number
+}
+
+export interface DocumentUploadWizardResponse {
+  code: number
+  msg: string
+  data: {
+    documentId: number
+    fileName: string
+    status: 'uploaded_not_chunked' | 'chunked'
+    chunkData?: ChunkPreview[]
+    uploadTime: string
+    fileSize?: string
+    fileType?: string
+  }
+}

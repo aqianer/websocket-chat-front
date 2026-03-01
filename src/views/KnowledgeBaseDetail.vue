@@ -119,7 +119,7 @@
                     <div class="header-actions">
                       <el-button type="primary" size="small" @click="handleUploadDoc">
                         <el-icon><Upload /></el-icon>
-                        上传文档
+                        继续上传
                       </el-button>
                       <el-button type="info" size="small" @click="handlePreviewChunk">
                         <el-icon><View /></el-icon>
@@ -356,8 +356,50 @@ const isTextOverflow = (text: string) => {
   return text.length > maxLength
 }
 
-const handleUploadDoc = () => {
-  router.push('/document-upload-wizard')
+const handleUploadDoc = async () => {
+  if (!selectedDoc.value) {
+    ElMessage.warning('请先选择一个文档')
+    return
+  }
+
+  try {
+    const response = await knowledgeBaseApi.getDocumentUploadWizard({
+      kbId,
+      documentId: selectedDoc.value.id
+    })
+
+    if (response.code === 200) {
+      const documentData = response.data
+
+      if (documentData.status === 'uploaded_not_chunked') {
+        router.push({
+          path: `/document-upload-wizard/${kbId}`,
+          query: {
+            documentId: documentData.documentId,
+            step: '2'
+          }
+        })
+      } else if (documentData.status === 'chunked') {
+        router.push({
+          path: `/document-upload-wizard/${kbId}`,
+          query: {
+            documentId: documentData.documentId,
+            step: '3',
+            chunkData: JSON.stringify(documentData.chunkData)
+          }
+        })
+      }
+    } else {
+      throw new Error(response.msg || '获取文档信息失败')
+    }
+  } catch (error) {
+    ElNotification({
+      title: '操作失败',
+      message: '无法获取文档信息，请检查网络连接后重试',
+      type: 'error',
+      duration: 5000
+    })
+  }
 }
 
 const handleFileChange = (file: any) => {

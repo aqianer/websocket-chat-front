@@ -13,7 +13,9 @@ import type {
   UploadDocumentResponse,
   DeleteDocumentRequest,
   ReVectorizeRequest,
-  ChunkPreviewResponse
+  ChunkPreviewResponse,
+  DocumentUploadWizardRequest,
+  DocumentUploadWizardResponse
 } from '@/types'
 
 const BASE_URL = '/api/v1/knowledge-base'
@@ -160,6 +162,11 @@ export const knowledgeBaseApi = {
 
   getChunkPreview: async (kbId: number, documentId: number): Promise<ChunkPreviewResponse> => {
     const response = await api.get<ChunkPreviewResponse>(`/${kbId}/documents/${documentId}/chunks`)
+    return response.data
+  },
+
+  getDocumentUploadWizard: async (data: DocumentUploadWizardRequest): Promise<DocumentUploadWizardResponse> => {
+    const response = await api.post<DocumentUploadWizardResponse>(`/document-upload-wizard/${data.kbId}/${data.documentId}`)
     return response.data
   }
 }

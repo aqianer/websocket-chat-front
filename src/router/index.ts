@@ -54,7 +54,7 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
-    path: '/document-upload-wizard',
+    path: '/document-upload-wizard/:kbId?',
     name: 'DocumentUploadWizard',
     component: () => import('@/views/DocumentUploadWizard.vue'),
     meta: {
