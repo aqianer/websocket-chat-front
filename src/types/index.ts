@@ -367,3 +367,24 @@ export interface DocumentUploadWizardResponse {
     fileType?: string
   }
 }
+
+export interface FileProcessRequest {
+  kbId: number
+  documentIds: number[]
+  parseStrategy: 'precise' | 'fast'
+  extractContent: string[]
+  segmentStrategy: 'auto' | 'custom' | 'hierarchy'
+}
+
+export interface FileProcessResponse {
+  code: number
+  msg: string
+  data: {
+    processedDocuments: Array<{
+      documentId: number
+      fileName: string
+      originalContent: string
+      chunkData: ChunkPreview[]
+    }>
+  }
+}

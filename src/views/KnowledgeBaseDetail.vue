@@ -13,7 +13,7 @@
             </el-tag>
           </div>
           <div class="header-right">
-            <el-button type="primary" @click="handleUploadDoc" circle>
+            <el-button type="primary" @click="handleNewUpload" circle>
               <el-icon><Upload /></el-icon>
             </el-button>
           </div>
@@ -356,6 +356,10 @@ const isTextOverflow = (text: string) => {
   return text.length > maxLength
 }
 
+const handleNewUpload = () => {
+  router.push(`/document-upload-wizard/${kbId}`)
+}
+
 const handleUploadDoc = async () => {
   if (!selectedDoc.value) {
     ElMessage.warning('请先选择一个文档')
@@ -376,7 +380,8 @@ const handleUploadDoc = async () => {
           path: `/document-upload-wizard/${kbId}`,
           query: {
             documentId: documentData.documentId,
-            step: '2'
+            step: '2',
+            status: 'uploaded_not_chunked'
           }
         })
       } else if (documentData.status === 'chunked') {
@@ -385,6 +390,7 @@ const handleUploadDoc = async () => {
           query: {
             documentId: documentData.documentId,
             step: '3',
+            status: 'chunked',
             chunkData: JSON.stringify(documentData.chunkData)
           }
         })

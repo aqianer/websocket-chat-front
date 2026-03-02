@@ -627,6 +627,218 @@ if (response.code === 200) {
 }
 ```
 
+### 12. 文件解析分段
+
+**接口描述**: 对已上传的文档进行解析和分段处理，支持批量处理多个文档
+
+**请求方式**: `POST`
+
+**请求路径**: `/api/v1/file/process`
+
+**请求体**:
+
+```json
+{
+  "kbId": 1,
+  "documentIds": [123, 124, 125],
+  "parseStrategy": "precise",
+  "extractContent": ["image", "ocr", "table"],
+  "segmentStrategy": "auto"
+}
+```
+
+**请求参数说明**:
+
+| 参数名          | 类型     | 必填 | 说明                                                       |
+| --------------- | -------- | ---- | ---------------------------------------------------------- |
+| kbId            | number   | 是   | 知识库 ID                                                  |
+| documentIds     | number[] | 是   | 文档 ID 列表，新上传时为多个文档ID，继续上传时为单个文档ID |
+| parseStrategy   | string   | 是   | 文档解析策略（precise/fast）                               |
+| extractContent  | string[] | 是   | 提取内容类型（image/ocr/table）                            |
+| segmentStrategy | string   | 是   | 分段策略（auto/custom/hierarchy）                          |
+
+**解析策略说明**:
+
+| 策略值      | 说明                           |
+| ----------- | ------------------------------ |
+| `precise` | 精准解析，提取图片、表格等元素 |
+| `fast`    | 快速解析，仅提取文本内容       |
+
+**分段策略说明**:
+
+| 策略值        | 说明                                 |
+| ------------- | ------------------------------------ |
+| `auto`      | 自动分段与预处理规则                 |
+| `custom`    | 自定义分段规则、分段长度及预处理规则 |
+| `hierarchy` | 按照文档层级结构分段                 |
+
+**提取内容说明**:
+
+| 内容类型  | 说明                 |
+| --------- | -------------------- |
+| `image` | 提取文档中的图片内容 |
+| `ocr`   | 对扫描件进行文字识别 |
+| `table` | 提取文档中的表格数据 |
+
+**请求示例**:
+
+```http
+POST /api/v1/file/process
+Content-Type: application/json
+
+{
+  "kbId": 1,
+  "documentIds": [123],
+  "parseStrategy": "precise",
+  "extractContent": ["image", "ocr", "table"],
+  "segmentStrategy": "auto"
+}
+```
+
+**响应示例**:
+
+```json
+{
+  "code": 200,
+  "msg": "处理成功",
+  "data": {
+    "processedDocuments": [
+      {
+        "documentId": 123,
+        "fileName": "技术文档.pdf",
+        "originalContent": "这是文档的原始内容...",
+        "chunkData": [
+          {
+            "content": "这是第一段分块内容，包含了文档的主要信息...",
+            "tokenCount": 256,
+            "vectorStatus": "已向量化"
+          },
+          {
+            "content": "这是第二段分块内容，继续描述相关内容...",
+            "tokenCount": 198,
+            "vectorStatus": "已向量化"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+**响应字段说明**:
+
+| 字段名                                             | 类型   | 说明                     |
+| -------------------------------------------------- | ------ | ------------------------ |
+| code                                               | number | 响应状态码，200 表示成功 |
+| msg                                                | string | 响应消息                 |
+| data                                               | object | 处理结果对象             |
+| data.processedDocuments                            | array  | 已处理文档列表           |
+| data.processedDocuments[].documentId               | number | 文档 ID                  |
+| data.processedDocuments[].fileName                 | string | 文档文件名               |
+| data.processedDocuments[].originalContent          | string | 文档原始内容             |
+| data.processedDocuments[].chunkData                | array  | 分块数据数组             |
+| data.processedDocuments[].chunkData[].content      | string | 分块内容                 |
+| data.processedDocuments[].chunkData[].tokenCount   | number | Token 数量               |
+| data.processedDocuments[].chunkData[].vectorStatus | string | 向量化状态               |
+
+**错误响应**:
+
+**400 请求参数错误**
+
+```json
+{
+  "code": 400,
+  "msg": "请求参数错误"
+}
+```
+
+**401 未授权**
+
+```json
+{
+  "code": 401,
+  "msg": "未授权，需要登录"
+}
+```
+
+**403 无权限访问**
+
+```json
+{
+  "code": 403,
+  "msg": "无权限访问该文档"
+}
+```
+
+**404 文档不存在**
+
+```json
+{
+  "code": 404,
+  "msg": "文档不存在"
+}
+```
+
+**500 服务器内部错误**
+
+```json
+{
+  "code": 500,
+  "msg": "服务器内部错误"
+}
+```
+
+**使用场景**:
+
+1. 用户在上传向导第二步配置解析和分段策略
+2. 点击"下一步"按钮
+3. 前端根据上传模式决定文档ID列表：
+   - **新上传模式**：传递第一步上传的所有文档ID列表
+   - **继续上传模式**：仅传递当前文档ID
+4. 后端根据配置策略对文档进行解析和分段
+5. 返回处理后的文档信息和分块数据
+6. 前端自动跳转到第三步（分段预览）展示结果
+
+**前端调用示例**:
+
+```typescript
+import { knowledgeBaseApi } from '@/api/knowledgeBase'
+
+// 新上传模式：处理多个文档
+const response = await knowledgeBaseApi.processFiles({
+  kbId: 1,
+  documentIds: [123, 124, 125],
+  parseStrategy: 'precise',
+  extractContent: ['image', 'ocr', 'table'],
+  segmentStrategy: 'auto'
+})
+
+// 继续上传模式：处理单个文档
+const response = await knowledgeBaseApi.processFiles({
+  kbId: 1,
+  documentIds: [123],
+  parseStrategy: 'precise',
+  extractContent: ['image', 'ocr', 'table'],
+  segmentStrategy: 'auto'
+})
+
+if (response.code === 200) {
+  const processedDocuments = response.data.processedDocuments
+  
+  // 更新文档列表
+  documentList.value = processedDocuments.map(doc => ({
+    id: doc.documentId,
+    name: doc.fileName,
+    originalContent: doc.originalContent,
+    segmentedContent: doc.chunkData.map(chunk => chunk.content).join('\n\n'),
+    status: 'completed'
+  }))
+  
+  // 跳转到第三步
+  currentStep.value = 3
+}
+```
+
 ## 数据模型
 
 ### KnowledgeBase (知识库)
@@ -684,6 +896,35 @@ interface DocumentUploadWizardResponse {
     uploadTime: string
     fileSize?: string
     fileType?: string
+  }
+}
+```
+
+### FileProcessRequest (文件解析分段请求)
+
+```typescript
+interface FileProcessRequest {
+  kbId: number
+  documentIds: number[]
+  parseStrategy: 'precise' | 'fast'
+  extractContent: string[]
+  segmentStrategy: 'auto' | 'custom' | 'hierarchy'
+}
+```
+
+### FileProcessResponse (文件解析分段响应)
+
+```typescript
+interface FileProcessResponse {
+  code: number
+  msg: string
+  data: {
+    processedDocuments: Array<{
+      documentId: number
+      fileName: string
+      originalContent: string
+      chunkData: ChunkPreview[]
+    }>
   }
 }
 ```
@@ -806,6 +1047,7 @@ await knowledgeBaseApi.uploadDocuments({
 
 | 版本   | 日期       | 说明                           |
 | ------ | ---------- | ------------------------------ |
+| v1.2.0 | 2024-03-01 | 新增文件解析分段接口（接口12） |
 | v1.1.0 | 2024-03-01 | 新增文档上传向导接口（接口11） |
 | v1.0.0 | 2024-02-28 | 初始版本，完成基础 CRUD 功能   |
 

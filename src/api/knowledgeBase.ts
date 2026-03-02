@@ -15,7 +15,9 @@ import type {
   ReVectorizeRequest,
   ChunkPreviewResponse,
   DocumentUploadWizardRequest,
-  DocumentUploadWizardResponse
+  DocumentUploadWizardResponse,
+  FileProcessRequest,
+  FileProcessResponse
 } from '@/types'
 
 const BASE_URL = '/api/v1/knowledge-base'
@@ -167,6 +169,11 @@ export const knowledgeBaseApi = {
 
   getDocumentUploadWizard: async (data: DocumentUploadWizardRequest): Promise<DocumentUploadWizardResponse> => {
     const response = await api.post<DocumentUploadWizardResponse>(`/document-upload-wizard/${data.kbId}/${data.documentId}`)
+    return response.data
+  },
+
+  processFiles: async (data: FileProcessRequest): Promise<FileProcessResponse> => {
+    const response = await api.post<FileProcessResponse>('/file/process', data)
     return response.data
   }
 }

@@ -273,7 +273,9 @@
       <el-button 
         v-if="currentStep > 1"
         @click="handlePrevStep"
+        :disabled="isPrevButtonDisabled"
         class="prev-button"
+        :class="{ 'is-disabled': isPrevButtonDisabled }"
       >
         上一步
       </el-button>
@@ -297,6 +299,7 @@ import { ArrowLeft, UploadFilled, Document, Close, Check, ArrowDown, QuestionFil
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import axios from 'axios'
+import { knowledgeBaseApi } from '@/api/knowledgeBase'
 
 const router = useRouter()
 const route = useRoute()
@@ -307,6 +310,8 @@ const currentStep = ref(1)
 const isUploading = ref(false)
 const uploadError = ref('')
 const knowledgeBaseId = ref<number | null>(null)
+const isContinueMode = ref(false)
+const documentStatus = ref<'uploaded_not_chunked' | 'chunked' | null>(null)
 
 interface FileItem {
   file: File
@@ -320,6 +325,7 @@ interface FileItem {
 const selectedFiles = ref<FileItem[]>([])
 const isDragOver = ref(false)
 const fileInputRef = ref<HTMLInputElement | null>(null)
+const uploadedDocumentIds = ref<number[]>([])
 
 const parsePanelExpanded = ref(true)
 const segmentPanelExpanded = ref(true)
@@ -458,6 +464,13 @@ const selectedDocument = computed(() => {
   return documentList.value.find(doc => doc.id === selectedDocId.value) || null
 })
 
+const isPrevButtonDisabled = computed(() => {
+  if (!isContinueMode.value) {
+    return false
+  }
+  return documentStatus.value === 'uploaded_not_chunked' || documentStatus.value === 'chunked'
+})
+
 const handleBack = () => {
   router.back()
 }
@@ -560,6 +573,9 @@ const handleNextStep = async () => {
 
     console.log('开始批量上传...')
     await handleBatchUpload()
+  } else if (currentStep.value === 2) {
+    console.log('开始文件解析分段...')
+    await handleFileProcess()
   } else if (currentStep.value < 4) {
     currentStep.value++
     if (currentStep.value === 3 && selectedDocId.value === null) {
@@ -637,6 +653,10 @@ const handleBatchUpload = async () => {
       })
 
       ElMessage.success(`成功上传 ${selectedFiles.value.length} 个文件`)
+      
+      uploadedDocumentIds.value = response.data.data.documentIds || []
+      console.log('已上传文档ID列表:', uploadedDocumentIds.value)
+      
       currentStep.value = 2
     } else {
       throw new Error(response.data.msg || '上传失败')
@@ -653,6 +673,83 @@ const handleBatchUpload = async () => {
     ElMessage.error(uploadError.value)
   } finally {
     console.log('上传流程结束，重置上传状态')
+    isUploading.value = false
+  }
+}
+
+const handleFileProcess = async () => {
+  console.log('handleFileProcess 开始执行')
+  console.log('knowledgeBaseId.value:', knowledgeBaseId.value)
+  console.log('isContinueMode.value:', isContinueMode.value)
+  
+  if (!knowledgeBaseId.value) {
+    ElMessage.warning('知识库ID不存在')
+    return
+  }
+
+  let documentIds: number[] = []
+  
+  if (isContinueMode.value) {
+    const documentId = route.query.documentId as string | undefined
+    if (documentId) {
+      documentIds = [parseInt(documentId, 10)]
+      console.log('继续上传模式 - 文档ID:', documentIds)
+    }
+  } else {
+    documentIds = uploadedDocumentIds.value
+    console.log('新上传模式 - 文档ID列表:', documentIds)
+  }
+
+  if (documentIds.length === 0) {
+    ElMessage.warning('没有可处理的文档')
+    return
+  }
+
+  isUploading.value = true
+
+  try {
+    console.log('发送文件解析分段请求到 /api/v1/file/process')
+    const response = await knowledgeBaseApi.processFiles({
+      kbId: knowledgeBaseId.value,
+      documentIds: documentIds,
+      parseStrategy: parseStrategy.value,
+      extractContent: extractContent.value,
+      segmentStrategy: segmentStrategy.value
+    })
+
+    console.log('收到处理响应:', response)
+
+    if (response.code === 200) {
+      const processedDocuments = response.data.processedDocuments
+      console.log('处理后的文档数量:', processedDocuments.length)
+
+      documentList.value = processedDocuments.map(doc => ({
+        id: doc.documentId,
+        name: doc.fileName,
+        originalContent: doc.originalContent,
+        segmentedContent: doc.chunkData.map(chunk => chunk.content).join('\n\n'),
+        status: 'completed' as const
+      }))
+
+      if (documentList.value.length > 0) {
+        selectedDocId.value = documentList.value[0].id
+      }
+
+      ElMessage.success('文件解析分段成功')
+      currentStep.value = 3
+    } else {
+      throw new Error(response.msg || '文件处理失败')
+    }
+  } catch (error: any) {
+    console.error('文件处理失败:', error)
+    ElNotification({
+      title: '处理失败',
+      message: '文件解析分段失败，请检查网络连接后重试',
+      type: 'error',
+      duration: 5000
+    })
+  } finally {
+    console.log('文件处理流程结束，重置上传状态')
     isUploading.value = false
   }
 }
@@ -721,9 +818,15 @@ onMounted(() => {
   const documentId = route.query.documentId as string | undefined
   const step = route.query.step as string | undefined
   const chunkData = route.query.chunkData as string | undefined
+  const status = route.query.status as string | undefined
 
   if (documentId && step) {
     console.log('现有文档模式 - 文档ID:', documentId, '步骤:', step)
+    isContinueMode.value = true
+    
+    if (status === 'uploaded_not_chunked' || status === 'chunked') {
+      documentStatus.value = status as 'uploaded_not_chunked' | 'chunked'
+    }
     
     if (chunkData) {
       try {
@@ -1325,12 +1428,27 @@ onMounted(() => {
   background-color: #f5f7fa;
   border-color: #e4e7ed;
   color: #606266;
+  transition: all 0.3s;
 }
 
 .prev-button:hover {
   background-color: #e8eaec;
   border-color: #d3d4d6;
   color: #303133;
+}
+
+.prev-button.is-disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  background-color: #f5f7fa;
+  border-color: #e4e7ed;
+  color: #c0c4cc;
+}
+
+.prev-button.is-disabled:hover {
+  background-color: #f5f7fa;
+  border-color: #e4e7ed;
+  color: #c0c4cc;
 }
 
 .next-button {
