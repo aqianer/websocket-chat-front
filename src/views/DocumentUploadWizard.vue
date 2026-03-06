@@ -71,6 +71,14 @@
               <div class="file-info">
                 <span class="file-name">{{ fileItem.name }}</span>
                 <span class="file-size">{{ formatFileSize(fileItem.size) }}</span>
+                <div v-if="fileItem.status === 'hashing'" class="file-progress">
+                  <el-progress :percentage="fileItem.progress" :stroke-width="4" :show-text="false" />
+                  <span class="progress-text">计算哈希 {{ fileItem.progress }}%</span>
+                </div>
+                <div v-if="fileItem.status === 'checking'" class="file-progress">
+                  <el-progress :percentage="fileItem.progress" :stroke-width="4" :show-text="false" />
+                  <span class="progress-text">预校验中...</span>
+                </div>
                 <div v-if="fileItem.status === 'uploading' || fileItem.status === 'pending'" class="file-progress">
                   <el-progress :percentage="fileItem.progress" :stroke-width="4" :show-text="false" />
                   <span class="progress-text">{{ fileItem.progress }}%</span>
@@ -78,24 +86,46 @@
                 <div v-if="fileItem.status === 'error'" class="file-error">
                   <span class="error-message">{{ fileItem.errorMessage }}</span>
                 </div>
+                <div v-if="fileItem.status === 'exists'" class="file-exists">
+                  <span class="exists-message">{{ fileItem.errorMessage }}</span>
+                </div>
               </div>
               <el-button 
                 size="small" 
                 text 
                 @click="removeFile(index)"
                 :disabled="isUploading"
-                v-if="fileItem.status !== 'success'"
+                v-if="fileItem.status !== 'success' && fileItem.status !== 'exists'"
               >
                 <el-icon><Close /></el-icon>
               </el-button>
-              <el-tag v-else size="small" type="success">上传成功</el-tag>
+              <el-tag v-else-if="fileItem.status === 'success'" size="small" type="success">上传成功</el-tag>
+              <el-tag v-else-if="fileItem.status === 'exists'" size="small" type="warning">文件已存在</el-tag>
             </div>
           </div>
         </div>
       </div>
 
       <div v-if="currentStep === 2" class="step-2-content">
-        <div class="settings-container">
+        <div v-if="isUploading && parseProgress.totalDocuments > 0" class="progress-container">
+          <div class="progress-info">
+            <el-icon class="progress-icon"><Loading /></el-icon>
+            <div class="progress-details">
+              <div class="progress-title">正在处理文档...</div>
+              <div class="progress-text">
+                <span v-if="parseProgress.currentDocumentName">"{{ parseProgress.currentDocumentName }}"</span>
+                <span> ({{ parseProgress.processedDocuments }}/{{ parseProgress.totalDocuments }})</span>
+              </div>
+              <el-progress 
+                :percentage="parseProgress.percentage" 
+                :stroke-width="8"
+                :show-text="false"
+              />
+            </div>
+          </div>
+        </div>
+        
+        <div class="settings-container" :class="{ 'is-processing': isUploading && parseProgress.totalDocuments > 0 }">
           <div class="collapse-panel" :class="{ 'is-collapsed': !parsePanelExpanded }">
             <div class="collapse-header" @click="toggleParsePanel">
               <span class="collapse-title">文档解析策略</span>
@@ -193,13 +223,32 @@
       </div>
 
       <div v-if="currentStep === 3" class="step-3-content">
-        <div class="preview-container">
+        <div v-if="isUploading && parseProgress.totalDocuments > 0" class="progress-container">
+          <div class="progress-info">
+            <el-icon class="progress-icon"><Loading /></el-icon>
+            <div class="progress-details">
+              <div class="progress-title">正在处理文档...</div>
+              <div class="progress-text">
+                <span v-if="parseProgress.currentDocumentName">"{{ parseProgress.currentDocumentName }}"</span>
+                <span> ({{ parseProgress.processedDocuments }}/{{ parseProgress.totalDocuments }})</span>
+              </div>
+              <el-progress 
+                :percentage="parseProgress.percentage" 
+                :stroke-width="8"
+                :show-text="false"
+              />
+            </div>
+          </div>
+        </div>
+        
+        <div class="preview-container" :class="{ 'is-processing': isUploading && parseProgress.totalDocuments > 0 }">
           <div class="left-sidebar" :class="{ 'is-collapsed': leftSidebarCollapsed }">
             <div class="sidebar-header">
               <span class="sidebar-title">自动分段与清洗</span>
               <el-button 
+                v-show="!leftSidebarCollapsed"
                 class="collapse-sidebar-btn"
-                :icon="leftSidebarCollapsed ? ArrowRight : ArrowLeft"
+                :icon="ArrowLeft"
                 circle
                 @click="toggleLeftSidebar"
               />
@@ -216,19 +265,38 @@
                   <el-icon class="document-icon"><Document /></el-icon>
                   <span class="document-name">{{ doc.name }}</span>
                 </div>
-                <el-tag size="small" type="warning" class="status-tag">处理中</el-tag>
+                <el-tag 
+                  size="small" 
+                  :type="doc.status === 'completed' ? 'success' : 'warning'" 
+                  class="status-tag"
+                >
+                  {{ doc.status === 'completed' ? '已完成' : '处理中' }}
+                </el-tag>
               </div>
             </div>
           </div>
+          
+          <el-button 
+            v-show="leftSidebarCollapsed"
+            class="expand-sidebar-btn"
+            :icon="ArrowRight"
+            circle
+            @click="toggleLeftSidebar"
+          />
 
           <div class="middle-panel">
             <div class="panel-header">
               <span class="panel-title">原始文档预览</span>
             </div>
             <div class="panel-content">
-              <div v-if="selectedDocument" class="preview-text">
-                {{ selectedDocument.originalContent }}
-              </div>
+              <DocumentPreview
+                v-if="selectedDocument"
+                :document-id="selectedDocument.id"
+                :file-name="selectedDocument.name"
+                :auto-load="true"
+                @load-success="handlePreviewLoadSuccess"
+                @load-error="handlePreviewLoadError"
+              />
               <div v-else class="empty-state">
                 <el-icon class="empty-icon"><Document /></el-icon>
                 <span class="empty-text">请选择文档查看预览</span>
@@ -286,20 +354,23 @@
         @click="handleNextStep"
         class="next-button"
       >
-        {{ isUploading ? '上传中...' : (currentStep === 4 ? '完成' : '下一步') }}
+        {{ getButtonText() }}
       </el-button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ArrowLeft, UploadFilled, Document, Close, Check, ArrowDown, QuestionFilled, Loading, ArrowRight, CircleClose, CircleCheck } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import axios from 'axios'
-import { knowledgeBaseApi } from '@/api/knowledgeBase'
+import { createFileParseWebSocket, showFileParseError, showFileParseSuccess } from '@/utils/fileParseWebSocket'
+import DocumentPreview from '@/components/DocumentPreview.vue'
+import documentPreviewManager from '@/utils/documentPreview'
+import SparkMD5 from 'spark-md5'
 
 const router = useRouter()
 const route = useRoute()
@@ -318,14 +389,24 @@ interface FileItem {
   name: string
   size: number
   progress: number
-  status: 'pending' | 'uploading' | 'success' | 'error'
+  status: 'pending' | 'hashing' | 'checking' | 'uploading' | 'success' | 'error' | 'exists'
   errorMessage?: string
+  hash?: string
+  token?: string
 }
 
 const selectedFiles = ref<FileItem[]>([])
 const isDragOver = ref(false)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const uploadedDocumentIds = ref<number[]>([])
+const fileParseWebSocket = ref<any>(null)
+const parseProgress = ref({
+  currentDocument: 0,
+  totalDocuments: 0,
+  processedDocuments: 0,
+  percentage: 0,
+  currentDocumentName: ''
+})
 
 const parsePanelExpanded = ref(true)
 const segmentPanelExpanded = ref(true)
@@ -353,108 +434,7 @@ interface DocumentItem {
   status: 'processing' | 'completed' | 'failed'
 }
 
-const documentList = ref<DocumentItem[]>([
-  {
-    id: 1,
-    name: 'requirements.txt',
-    originalContent: `# 项目依赖
-
-## 前端依赖
-- vue@3.4.0
-- element-plus@2.5.0
-- vue-router@4.6.4
-- pinia@3.0.4
-- axios@1.6.0
-
-## 后端依赖
-- spring-boot-starter-web
-- spring-boot-starter-data-jpa
-- mysql-connector-java
-- lombok
-
-## 开发工具
-- vite@5.0.0
-- typescript@5.3.3
-- vitest@1.0.0`,
-    segmentedContent: `# 项目依赖
-
-## 前端依赖
-- vue@3.4.0
-- element-plus@2.5.0
-- vue-router@4.6.4
-- pinia@3.0.4
-- axios@1.6.0
-
-## 后端依赖
-- spring-boot-starter-web
-- spring-boot-starter-data-jpa
-- mysql-connector-java
-- lombok
-
-## 开发工具
-- vite@5.0.0
-- typescript@5.3.3
-- vitest@1.0.0`,
-    status: 'processing'
-  },
-  {
-    id: 2,
-    name: '融合计费系统全量业务文档.md',
-    originalContent: `# 融合计费系统业务文档
-
-## 1. 系统概述
-融合计费系统是一个综合性的计费管理平台，支持多种计费模式和业务场景。
-
-## 2. 核心功能
-- 用户管理
-- 套餐管理
-- 计费规则配置
-- 账单生成
-- 充值管理
-- 报表统计
-
-## 3. 业务流程
-1. 用户注册
-2. 选择套餐
-3. 充值
-4. 使用服务
-5. 生成账单
-6. 缴费
-
-## 4. 技术架构
-- 前端：Vue3 + Element Plus
-- 后端：Spring Boot
-- 数据库：MySQL
-- 缓存：Redis`,
-    segmentedContent: `# 融合计费系统业务文档
-
-## 1. 系统概述
-融合计费系统是一个综合性的计费管理平台，支持多种计费模式和业务场景。
-
-## 2. 核心功能
-- 用户管理
-- 套餐管理
-- 计费规则配置
-- 账单生成
-- 充值管理
-- 报表统计
-
-## 3. 业务流程
-1. 用户注册
-2. 选择套餐
-3. 充值
-4. 使用服务
-5. 生成账单
-6. 缴费
-
-## 4. 技术架构
-- 前端：Vue3 + Element Plus
-- 后端：Spring Boot
-- 数据库：MySQL
-- 缓存：Redis`,
-    status: 'processing'
-  }
-])
+const documentList = ref<DocumentItem[]>([])
 
 const selectedDocId = ref<number | null>(null)
 const leftSidebarCollapsed = ref(false)
@@ -470,6 +450,24 @@ const isPrevButtonDisabled = computed(() => {
   }
   return documentStatus.value === 'uploaded_not_chunked' || documentStatus.value === 'chunked'
 })
+
+const getButtonText = () => {
+  if (currentStep.value === 1) {
+    if (isUploading.value) {
+      return '上传中...'
+    }
+    const allCompleted = selectedFiles.value.length > 0 && 
+      selectedFiles.value.every(f => f.status === 'success' || f.status === 'exists')
+    if (allCompleted) {
+      return '下一步'
+    }
+    return '上传'
+  }
+  if (currentStep.value === 4) {
+    return '完成'
+  }
+  return '下一步'
+}
 
 const handleBack = () => {
   router.back()
@@ -587,6 +585,71 @@ const handleNextStep = async () => {
   }
 }
 
+const calculateFileHash = (file: File, onProgress: (progress: number) => void): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const spark = new SparkMD5.ArrayBuffer()
+    const fileReader = new FileReader()
+    const chunkSize = 2 * 1024 * 1024
+    const chunks = Math.ceil(file.size / chunkSize)
+    let currentChunk = 0
+
+    fileReader.onload = (e) => {
+      spark.append(e.target?.result as ArrayBuffer)
+      currentChunk++
+      
+      if (currentChunk < chunks) {
+        loadNext()
+      } else {
+        const hash = spark.end()
+        resolve(hash)
+      }
+    }
+
+    fileReader.onerror = () => {
+      reject(new Error('文件哈希计算失败'))
+    }
+
+    const loadNext = () => {
+      const start = currentChunk * chunkSize
+      const end = Math.min(start + chunkSize, file.size)
+      const blob = file.slice(start, end)
+      fileReader.readAsArrayBuffer(blob)
+      
+      const progress = Math.round((currentChunk / chunks) * 100)
+      onProgress(progress)
+    }
+
+    loadNext()
+  })
+}
+
+const checkFileExists = async (fileHash: string, fileName: string, fileSize: number): Promise<{ exists: boolean, token?: string, message?: string }> => {
+  try {
+    const response = await axios.post('/api/v1/file/check', {
+      hash: fileHash,
+      fileName: fileName,
+      fileSize: fileSize
+    }, {
+      headers: {
+        'Authorization': `Bearer ${userStore.token}`
+      }
+    })
+
+    if (response.data.code === 200) {
+      const data = response.data.data
+      if (data.exists) {
+        return { exists: true, message: '文件已存在' }
+      } else {
+        return { exists: false, token: data.token }
+      }
+    } else {
+      throw new Error(response.data.msg || '预校验失败')
+    }
+  } catch (error: any) {
+    throw new Error(error.response?.data?.msg || error.message || '预校验失败')
+  }
+}
+
 const handleBatchUpload = async () => {
   console.log('handleBatchUpload 开始执行')
   console.log('selectedFiles.value:', selectedFiles.value)
@@ -610,66 +673,142 @@ const handleBatchUpload = async () => {
   isUploading.value = true
   uploadError.value = ''
 
-  const formData = new FormData()
-  selectedFiles.value.forEach((fileItem) => {
-    formData.append('files[]', fileItem.file)
-  })
-  console.log('FormData 已创建，文件数量:', selectedFiles.value.length)
-
-  const batchConfig = {
-    splitStrategy: segmentStrategy.value,
-    language: 'zh-CN',
-    knowledgeBaseId: knowledgeBaseId.value
-  }
-  formData.append('batchConfig', JSON.stringify(batchConfig))
-  console.log('batchConfig:', JSON.stringify(batchConfig))
+  const filesToUpload: FileItem[] = []
+  const existingFiles: FileItem[] = []
 
   try {
-    console.log('开始发送请求到 /api/v1/documents/upload')
-    const response = await axios.post('/api/v1/documents/upload', formData, {
-      headers: {
-        'Authorization': `Bearer ${userStore.token}`,
-        'Content-Type': 'multipart/form-data'
-      },
-      onUploadProgress: (progressEvent) => {
-        if (progressEvent.total) {
-          const overallProgress = Math.round((progressEvent.loaded * 100) / progressEvent.total)
-          selectedFiles.value.forEach(fileItem => {
-            if (fileItem.status === 'uploading' || fileItem.status === 'pending') {
-              fileItem.progress = overallProgress
-              fileItem.status = 'uploading'
+    for (const fileItem of selectedFiles.value) {
+      if (fileItem.status === 'success' || fileItem.status === 'exists') {
+        continue
+      }
+
+      try {
+        fileItem.status = 'hashing'
+        fileItem.progress = 0
+
+        console.log(`开始计算文件哈希: ${fileItem.name}`)
+        const hash = await calculateFileHash(fileItem.file, (progress) => {
+          fileItem.progress = progress
+        })
+
+        fileItem.hash = hash
+        console.log(`文件哈希计算完成: ${fileItem.name}, hash: ${hash}`)
+
+        fileItem.status = 'checking'
+        fileItem.progress = 0
+
+        console.log(`开始预校验文件: ${fileItem.name}`)
+        const checkResult = await checkFileExists(hash, fileItem.name, fileItem.size)
+
+        if (checkResult.exists) {
+          console.log(`文件已存在: ${fileItem.name}`)
+          fileItem.status = 'exists'
+          fileItem.progress = 100
+          fileItem.errorMessage = checkResult.message
+          existingFiles.push(fileItem)
+
+          await ElMessageBox.confirm(
+            `文件 "${fileItem.name}" 已存在，是否跳转到已存在的文档？`,
+            '文件已存在',
+            {
+              confirmButtonText: '跳转',
+              cancelButtonText: '取消',
+              type: 'warning'
+            }
+          ).then(() => {
+            console.log(`用户选择跳转到已存在的文档: ${fileItem.name}`)
+            router.push({ name: 'DocumentDetail', params: { id: fileItem.hash } })
+          }).catch(() => {
+            console.log(`用户取消跳转: ${fileItem.name}`)
+          })
+        } else {
+          console.log(`文件允许上传: ${fileItem.name}, token: ${checkResult.token}`)
+          fileItem.token = checkResult.token
+          filesToUpload.push(fileItem)
+        }
+      } catch (error: any) {
+        console.error(`文件处理失败: ${fileItem.name}`, error)
+        fileItem.status = 'error'
+        fileItem.errorMessage = error.message || '处理失败'
+      }
+    }
+
+    if (filesToUpload.length === 0 && existingFiles.length === 0) {
+      ElMessage.warning('没有可上传的文件')
+      isUploading.value = false
+      return
+    }
+
+    if (filesToUpload.length > 0) {
+      console.log(`开始上传 ${filesToUpload.length} 个文件`)
+      let newUploadedDocumentIds: number[] = []
+      
+      for (const fileItem of filesToUpload) {
+        try {
+          fileItem.status = 'uploading'
+          fileItem.progress = 0
+
+          const formData = new FormData()
+          formData.append('file', fileItem.file)
+          formData.append('hash', fileItem.hash || '')
+          formData.append('token', fileItem.token || '')
+
+          const batchConfig = {
+            splitStrategy: segmentStrategy.value,
+            language: 'zh-CN',
+            knowledgeBaseId: knowledgeBaseId.value
+          }
+          formData.append('batchConfig', JSON.stringify(batchConfig))
+
+          console.log(`开始上传文件: ${fileItem.name}`)
+          const response = await axios.post('/api/v1/documents/upload', formData, {
+            headers: {
+              'Authorization': `Bearer ${userStore.token}`,
+              'Content-Type': 'multipart/form-data'
+            },
+            onUploadProgress: (progressEvent) => {
+              if (progressEvent.total) {
+                fileItem.progress = Math.round((progressEvent.loaded * 100) / progressEvent.total)
+              }
             }
           })
+
+          console.log(`文件上传完成: ${fileItem.name}`, response.data)
+
+          if (response.data.code === 200) {
+            fileItem.progress = 100
+            fileItem.status = 'success'
+            if (response.data.data.documentIds) {
+              newUploadedDocumentIds = [...newUploadedDocumentIds, ...response.data.data.documentIds]
+            }
+          } else {
+            throw new Error(response.data.msg || '上传失败')
+          }
+        } catch (error: any) {
+          console.error(`文件上传失败: ${fileItem.name}`, error)
+          fileItem.status = 'error'
+          fileItem.errorMessage = error.message || '上传失败'
         }
       }
-    })
 
-    console.log('收到响应:', response.data)
+      const successCount = filesToUpload.filter(f => f.status === 'success').length
+      if (successCount > 0) {
+        ElMessage.success(`成功上传 ${successCount} 个文件`)
+        
+        uploadedDocumentIds.value = newUploadedDocumentIds
+        console.log('已上传文档ID列表:', uploadedDocumentIds.value)
+        
+        cacheDocumentPreviews(uploadedDocumentIds.value)
+      }
+    }
 
-    if (response.data.code === 200) {
-      selectedFiles.value.forEach(fileItem => {
-        fileItem.progress = 100
-        fileItem.status = 'success'
-      })
-
-      ElMessage.success(`成功上传 ${selectedFiles.value.length} 个文件`)
-      
-      uploadedDocumentIds.value = response.data.data.documentIds || []
-      console.log('已上传文档ID列表:', uploadedDocumentIds.value)
-      
+    const allSuccess = selectedFiles.value.every(f => f.status === 'success' || f.status === 'exists')
+    if (allSuccess) {
       currentStep.value = 2
-    } else {
-      throw new Error(response.data.msg || '上传失败')
     }
   } catch (error: any) {
-    console.error('上传失败:', error)
+    console.error('上传流程失败:', error)
     uploadError.value = '文件上传失败，请重试'
-    selectedFiles.value.forEach(fileItem => {
-      if (fileItem.status !== 'success') {
-        fileItem.status = 'error'
-        fileItem.errorMessage = error.message || '上传失败'
-      }
-    })
     ElMessage.error(uploadError.value)
   } finally {
     console.log('上传流程结束，重置上传状态')
@@ -708,48 +847,85 @@ const handleFileProcess = async () => {
   isUploading.value = true
 
   try {
-    console.log('发送文件解析分段请求到 /api/v1/file/process')
-    const response = await knowledgeBaseApi.processFiles({
+    const userId = userStore.userInfo?.username || 'anonymous'
+    const wsUrl = `ws://localhost:7676/ws/fileParse/${userId}`
+    console.log('创建 WebSocket 连接:', wsUrl)
+    
+    fileParseWebSocket.value = createFileParseWebSocket(userId)
+    
+    await fileParseWebSocket.value.connect(wsUrl)
+    
+    // WebSocket 连接成功后立即显示文档列表
+    documentList.value = documentIds.map(id => ({
+      id: id,
+      name: `文档_${id}`,
+      originalContent: '',
+      segmentedContent: '',
+      status: 'processing' as const
+    }))
+    
+    if (documentList.value.length > 0) {
+      selectedDocId.value = documentList.value[0].id
+    }
+    
+    fileParseWebSocket.value.onProgress((data) => {
+      console.log('收到进度更新:', data)
+      parseProgress.value = {
+        currentDocument: data.currentDocument,
+        totalDocuments: data.totalDocuments,
+        processedDocuments: data.processedDocuments,
+        percentage: data.percentage,
+        currentDocumentName: data.currentDocumentName || ''
+      }
+    })
+    
+    fileParseWebSocket.value.onComplete((data) => {
+      console.log('收到处理完成消息:', data)
+      const processedDocuments = data.processedDocuments
+      
+      processedDocuments.forEach(processedDoc => {
+        const existingDocIndex = documentList.value.findIndex(doc => doc.id === processedDoc.documentId)
+        if (existingDocIndex !== -1) {
+          documentList.value[existingDocIndex] = {
+            id: processedDoc.documentId,
+            name: processedDoc.fileName,
+            originalContent: processedDoc.originalContent,
+            segmentedContent: processedDoc.chunkData.map(chunk => chunk.content).join('\n\n'),
+            status: 'completed' as const
+          }
+        }
+      })
+
+      if (documentList.value.length > 0 && !selectedDocId.value) {
+        selectedDocId.value = documentList.value[0].id
+      }
+
+      showFileParseSuccess(processedDocuments.length)
+      isUploading.value = false
+      
+      fileParseWebSocket.value?.disconnect()
+    })
+    
+    fileParseWebSocket.value.onError((data) => {
+      console.error('收到处理错误:', data)
+      showFileParseError(data.message)
+      isUploading.value = false
+      fileParseWebSocket.value?.disconnect()
+    })
+    
+    fileParseWebSocket.value.sendFileParseRequest({
       kbId: knowledgeBaseId.value,
       documentIds: documentIds,
       parseStrategy: parseStrategy.value,
       extractContent: extractContent.value,
       segmentStrategy: segmentStrategy.value
     })
-
-    console.log('收到处理响应:', response)
-
-    if (response.code === 200) {
-      const processedDocuments = response.data.processedDocuments
-      console.log('处理后的文档数量:', processedDocuments.length)
-
-      documentList.value = processedDocuments.map(doc => ({
-        id: doc.documentId,
-        name: doc.fileName,
-        originalContent: doc.originalContent,
-        segmentedContent: doc.chunkData.map(chunk => chunk.content).join('\n\n'),
-        status: 'completed' as const
-      }))
-
-      if (documentList.value.length > 0) {
-        selectedDocId.value = documentList.value[0].id
-      }
-
-      ElMessage.success('文件解析分段成功')
-      currentStep.value = 3
-    } else {
-      throw new Error(response.msg || '文件处理失败')
-    }
+    
+    currentStep.value = 3
+    
   } catch (error: any) {
-    console.error('文件处理失败:', error)
-    ElNotification({
-      title: '处理失败',
-      message: '文件解析分段失败，请检查网络连接后重试',
-      type: 'error',
-      duration: 5000
-    })
-  } finally {
-    console.log('文件处理流程结束，重置上传状态')
+    console.error('WebSocket 连接失败:', error)
+    showFileParseError('无法建立连接，请检查网络后重试')
     isUploading.value = false
   }
 }
@@ -799,9 +975,48 @@ const getFileStatusIcon = (status: string) => {
     case 'error':
       return CircleClose
     case 'uploading':
+    case 'hashing':
+    case 'checking':
       return Loading
+    case 'exists':
+      return Check
     default:
       return Document
+  }
+}
+
+const handlePreviewLoadSuccess = (url: string) => {
+  console.log('文档预览加载成功:', url)
+}
+
+const handlePreviewLoadError = (error: string) => {
+  console.error('文档预览加载失败:', error)
+  ElMessage.error('文档预览加载失败')
+}
+
+const cacheDocumentPreviews = async (documentIds: number[]) => {
+  for (const docId of documentIds) {
+    try {
+      const cached = documentPreviewManager.getDocumentPreview(docId)
+      if (cached) {
+        console.log('文档已有缓存:', docId)
+        continue
+      }
+
+      const response = await axios.get(`/api/v1/documents/${docId}/preview`, {
+        responseType: 'blob',
+        headers: {
+          'Authorization': `Bearer ${userStore.token}`
+        }
+      })
+
+      const blob = new Blob([response.data], { type: response.headers['content-type'] })
+      const file = new File([blob], `document_${docId}`, { type: blob.type })
+      documentPreviewManager.cacheDocumentPreview(docId, file)
+      console.log('文档预览已缓存:', docId)
+    } catch (error) {
+      console.error('缓存文档预览失败:', docId, error)
+    }
   }
 }
 
@@ -826,6 +1041,15 @@ onMounted(() => {
     
     if (status === 'uploaded_not_chunked' || status === 'chunked') {
       documentStatus.value = status as 'uploaded_not_chunked' | 'chunked'
+    }
+    
+    const docId = parseInt(documentId, 10)
+    
+    const cachedPreview = documentPreviewManager.getDocumentPreview(docId)
+    if (cachedPreview) {
+      console.log('从缓存加载文档预览:', cachedPreview)
+    } else {
+      console.log('未找到文档预览缓存，将首次加载')
     }
     
     if (chunkData) {
@@ -854,6 +1078,15 @@ onMounted(() => {
       console.log('设置当前步骤为:', currentStep.value)
     }
   }
+})
+
+onUnmounted(() => {
+  console.log('组件卸载，清理 WebSocket 连接')
+  fileParseWebSocket.value?.disconnect()
+  fileParseWebSocket.value = null
+  
+  console.log('清理文档预览缓存')
+  documentPreviewManager.cleanup()
 })
 </script>
 
@@ -968,27 +1201,44 @@ onMounted(() => {
   flex-direction: column;
   padding: 80px 24px 80px;
   overflow: hidden;
+  min-height: calc(100vh - 64px - 72px);
 }
 
 .wizard-content.has-step-3,
 .wizard-content.has-step-4 {
   padding: 64px 0 72px;
+  min-height: calc(100vh - 64px - 72px);
 }
 
 .step-1-content,
 .step-2-content {
   width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
+  flex: 1;
+  min-height: 0;
 }
 
 .step-3-content,
 .step-4-content {
   width: 100%;
-  height: 100%;
+  flex: 1;
   display: flex;
   flex-direction: column;
+  min-height: 0;
+}
+
+.step-3-content .progress-container {
+  flex-shrink: 0;
+  max-height: 200px;
+}
+
+.step-3-content .preview-container.is-processing {
+  opacity: 0.5;
+  pointer-events: none;
 }
 
 .step-1-content {
@@ -1002,6 +1252,65 @@ onMounted(() => {
   width: 100%;
   display: flex;
   justify-content: center;
+}
+
+.settings-container.is-processing {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.progress-container {
+  width: 100%;
+  max-width: 800px;
+  padding: 24px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.progress-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+
+.progress-icon {
+  font-size: 48px;
+  color: #409eff;
+  animation: rotate 2s linear infinite;
+}
+
+@keyframes rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.progress-details {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.progress-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.progress-text {
+  font-size: 14px;
+  color: #606266;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .settings-container {
@@ -1228,15 +1537,6 @@ onMounted(() => {
   color: #c0c4cc;
 }
 
-.wizard-content {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 100px 24px 80px;
-}
-
 .upload-area {
   width: 100%;
   max-width: 640px;
@@ -1403,6 +1703,15 @@ onMounted(() => {
 .error-message {
   font-size: 12px;
   color: #f56c6c;
+}
+
+.file-exists {
+  margin-top: 4px;
+}
+
+.exists-message {
+  font-size: 12px;
+  color: #e6a23c;
 }
 
 .wizard-footer {
@@ -1641,32 +1950,40 @@ onMounted(() => {
 .preview-container {
   display: flex;
   width: 100%;
-  height: 100%;
+  flex: 1;
   gap: 0;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
 }
 
 .left-sidebar {
-  width: 280px;
+  width: 320px;
+  max-width: 25%;
   background-color: white;
   border-right: 1px solid #e4e7ed;
   display: flex;
   flex-direction: column;
   transition: width 0.3s ease;
   flex-shrink: 0;
+  position: relative;
 }
 
 .left-sidebar.is-collapsed {
   width: 0;
   overflow: hidden;
+  border-right: none;
 }
 
 .sidebar-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 20px;
+  padding: 10px 16px;
   border-bottom: 1px solid #e4e7ed;
   background-color: #fafafa;
+  height: 38px;
+  flex-shrink: 0;
 }
 
 .sidebar-title {
@@ -1691,6 +2008,31 @@ onMounted(() => {
   background-color: #409eff;
   border-color: #409eff;
   color: white;
+}
+
+.expand-sidebar-btn {
+  position: absolute;
+  left: 16px;
+  top: 19px;
+  transform: translateY(-50%);
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: white;
+  border: 1px solid #dcdfe6;
+  border-radius: 50%;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s;
+  z-index: 10;
+}
+
+.expand-sidebar-btn:hover {
+  background-color: #409eff;
+  border-color: #409eff;
+  color: white;
+  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.3);
 }
 
 .document-list {
@@ -1766,9 +2108,11 @@ onMounted(() => {
 .panel-header {
   display: flex;
   align-items: center;
-  padding: 16px 20px;
+  padding: 10px 16px;
   border-bottom: 1px solid #e4e7ed;
   background-color: #fafafa;
+  height: 38px;
+  flex-shrink: 0;
 }
 
 .panel-title {
@@ -1782,6 +2126,7 @@ onMounted(() => {
   overflow-y: auto;
   padding: 20px;
   background-color: #ffffff;
+  min-height: 0;
 }
 
 .preview-text {
@@ -1896,12 +2241,17 @@ onMounted(() => {
 }
 
 @media (max-width: 768px) {
+  .wizard-content {
+    padding: 80px 16px 72px;
+  }
+
   .preview-container {
     flex-direction: column;
   }
 
   .left-sidebar {
     width: 100%;
+    max-width: 100%;
     max-height: 200px;
     border-right: none;
     border-bottom: 1px solid #e4e7ed;
@@ -1909,7 +2259,24 @@ onMounted(() => {
 
   .left-sidebar.is-collapsed {
     width: 100%;
-    max-height: 48px;
+    max-height: 38px;
+  }
+
+  .sidebar-header {
+    height: 38px;
+    padding: 10px 16px;
+  }
+
+  .expand-sidebar-btn {
+    left: 8px;
+    top: 19px;
+    width: 28px;
+    height: 28px;
+  }
+
+  .panel-header {
+    height: 38px;
+    padding: 10px 16px;
   }
 
   .document-list {

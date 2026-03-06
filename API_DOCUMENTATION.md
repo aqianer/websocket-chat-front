@@ -153,7 +153,7 @@ When navigating to the Document Upload Wizard, the frontend passes the following
 
 ```bash
 curl -X POST \
-  'http://localhost:7575/api/v1/knowledge-base/document-upload-wizard/1/123' \
+  'http://localhost:7676/api/v1/knowledge-base/document-upload-wizard/1/123' \
   -H 'Authorization: Bearer YOUR_TOKEN_HERE' \
   -H 'Content-Type: application/json'
 ```
@@ -355,7 +355,7 @@ if (response.code === 200) {
 
 ```bash
 curl -X POST \
-  'http://localhost:7575/api/v1/file/process' \
+  'http://localhost:7676/api/v1/file/process' \
   -H 'Authorization: Bearer YOUR_TOKEN_HERE' \
   -H 'Content-Type: application/json' \
   -d '{
@@ -418,6 +418,12 @@ if (response.code === 200) {
 - [ ] Verify different segmentation strategies (auto/custom/hierarchy)
 - [ ] Verify chunk data is correctly formatted and displayed in Step 3
 - [ ] Test error handling and user notifications
+- [ ] **WebSocket Connection**: Test WebSocket connection establishment
+- [ ] **WebSocket Progress**: Test real-time progress updates for multiple documents
+- [ ] **WebSocket Complete**: Test complete message with chunk data
+- [ ] **WebSocket Error**: Test error message handling and connection cleanup
+- [ ] **WebSocket Reconnection**: Test automatic reconnection on connection loss
+- [ ] **WebSocket Cleanup**: Test connection cleanup on component unmount
 - [ ] Test with valid knowledge base ID and document ID
 - [ ] Test with invalid document ID (404 error)
 - [ ] Test with unauthorized access (401 error)

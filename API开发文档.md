@@ -153,6 +153,53 @@ GET /api/v1/knowledge-base/1
 }
 ```
 
+**请求体**:
+
+```json
+{
+  "type": "parse",
+  "data": {
+    "kbId": 1,
+    "documentIds": [123, 124, 125],
+    "parseStrategy": "precise",
+    "extractContent": ["image", "ocr", "table"],
+    "segmentStrategy": "auto"
+  }
+}
+```
+
+**WebSocket 消息类型**:
+
+| 消息类型     | 方向             | 说明                   |
+| ------------ | ---------------- | ---------------------- |
+| `progress` | 服务端 → 客户端 | 实时推送处理进度       |
+| `complete` | 服务端 → 客户端 | 处理完成，返回分块数据 |
+| `error`    | 服务端 → 客户端 | 处理过程中发生错误     |
+
+**进度消息（progress）数据结构**:
+
+| 字段名              | 类型   | 说明                       |
+| ------------------- | ------ | -------------------------- |
+| currentDocument     | number | 当前正在处理的文档序号     |
+| totalDocuments      | number | 总文档数量                 |
+| processedDocuments  | number | 已处理的文档数量           |
+| percentage          | number | 总体进度百分比（0-100）    |
+| currentDocumentName | string | 当前处理的文档名称（可选） |
+
+**完成消息（complete）数据结构**:
+
+与之前定义的 `FileProcessResponse` 响应数据结构相同：
+
+- `processedDocuments`：已处理文档数组
+- 每个文档包含：documentId、fileName、originalContent、chunkData
+
+**错误消息（error）数据结构**:
+
+| 字段名  | 类型   | 说明           |
+| ------- | ------ | -------------- |
+| message | string | 错误消息       |
+| code    | number | 错误码（可选） |
+
 **请求参数说明**:
 
 | 参数名      | 类型   | 必填 | 说明                            |
@@ -627,13 +674,17 @@ if (response.code === 200) {
 }
 ```
 
-### 12. 文件解析分段
+### 12. 文件解析分段（WebSocket 实时通信）
 
-**接口描述**: 对已上传的文档进行解析和分段处理，支持批量处理多个文档
+**接口描述**: 对已上传的文档进行解析和分段处理，支持批量处理多个文档，通过 WebSocket 实时推送进度
 
-**请求方式**: `POST`
+**通信方式**: `WebSocket`
 
-**请求路径**: `/api/v1/file/process`
+**连接路径**: `ws://localhost:7676/ws/fileParse/{userId}`
+
+**认证方式**: 通过 URL 中的 userId 标识用户
+
+**连接建立**: 前端建立 WebSocket 连接后，发送解析请求
 
 **请求体**:
 
@@ -792,38 +843,68 @@ Content-Type: application/json
 
 1. 用户在上传向导第二步配置解析和分段策略
 2. 点击"下一步"按钮
-3. 前端根据上传模式决定文档ID列表：
+3. 前端建立 WebSocket 连接：`ws://localhost:7676/ws/fileParse/{userId}`
+4. 前端根据上传模式确定文档 ID 列表：
    - **新上传模式**：传递第一步上传的所有文档ID列表
    - **继续上传模式**：仅传递当前文档ID
-4. 后端根据配置策略对文档进行解析和分段
-5. 返回处理后的文档信息和分块数据
-6. 前端自动跳转到第三步（分段预览）展示结果
+5. 前端通过 WebSocket 发送解析请求：
+   ```json
+   {
+     "type": "parse",
+     "data": {
+       "kbId": 1,
+       "documentIds": [123],
+       "parseStrategy": "precise",
+       "extractContent": ["image", "ocr", "table"],
+       "segmentStrategy": "auto"
+     }
+   }
+   ```
+6. 后端根据配置策略对文档进行解析和分段
+7. 后端通过 WebSocket 实时推送处理进度：
+   - **progress 消息**：推送当前处理进度（currentDocument、totalDocuments、processedDocuments、percentage）
+   - **complete 消息**：处理完成，返回分块数据
+   - **error 消息**：处理过程中发生错误
+8. 前端根据消息类型更新 UI：
+   - 收到 progress：显示实时进度条和当前文档信息
+   - 收到 complete：更新文档列表，显示分块结果，跳转到第三步
+   - 收到 error：显示错误提示，断开连接
+9. 前端自动跳转到第三步（分段预览）展示结果
+
+**WebSocket 连接管理**:
+
+- 自动重连机制：最多重连 3 次，间隔 3 秒
+- 组件卸载时自动断开连接
+- 支持注册消息处理器（progress/complete/error）
 
 **前端调用示例**:
 
 ```typescript
-import { knowledgeBaseApi } from '@/api/knowledgeBase'
+import { createFileParseWebSocket } from '@/utils/fileParseWebSocket'
 
-// 新上传模式：处理多个文档
-const response = await knowledgeBaseApi.processFiles({
-  kbId: 1,
-  documentIds: [123, 124, 125],
-  parseStrategy: 'precise',
-  extractContent: ['image', 'ocr', 'table'],
-  segmentStrategy: 'auto'
+const userId = userStore.userInfo?.username || 'anonymous'
+const wsUrl = `ws://localhost:7676/ws/fileParse/${userId}`
+const fileParseWebSocket = createFileParseWebSocket(userId)
+
+// 连接 WebSocket
+await fileParseWebSocket.connect(wsUrl)
+
+// 注册消息处理器
+fileParseWebSocket.onProgress((data) => {
+  console.log('处理进度:', data)
+  // 更新进度 UI
+  parseProgress.value = {
+    currentDocument: data.currentDocument,
+    totalDocuments: data.totalDocuments,
+    processedDocuments: data.processedDocuments,
+    percentage: data.percentage,
+    currentDocumentName: data.currentDocumentName || ''
+  }
 })
 
-// 继续上传模式：处理单个文档
-const response = await knowledgeBaseApi.processFiles({
-  kbId: 1,
-  documentIds: [123],
-  parseStrategy: 'precise',
-  extractContent: ['image', 'ocr', 'table'],
-  segmentStrategy: 'auto'
-})
-
-if (response.code === 200) {
-  const processedDocuments = response.data.processedDocuments
+fileParseWebSocket.onComplete((data) => {
+  console.log('处理完成:', data)
+  const processedDocuments = data.processedDocuments
   
   // 更新文档列表
   documentList.value = processedDocuments.map(doc => ({
@@ -836,7 +917,25 @@ if (response.code === 200) {
   
   // 跳转到第三步
   currentStep.value = 3
-}
+  
+  // 断开连接
+  fileParseWebSocket.disconnect()
+})
+
+fileParseWebSocket.onError((data) => {
+  console.error('处理错误:', data)
+  showFileParseError(data.message)
+  fileParseWebSocket.disconnect()
+})
+
+// 发送解析请求
+fileParseWebSocket.sendFileParseRequest({
+  kbId: 1,
+  documentIds: [123, 124, 125],
+  parseStrategy: 'precise',
+  extractContent: ['image', 'ocr', 'table'],
+  segmentStrategy: 'auto'
+})
 ```
 
 ## 数据模型
@@ -955,6 +1054,33 @@ interface FileProcessResponse {
 - 资源级别的权限验证
 - 操作日志记录
 
+### 5. WebSocket 通信
+
+**连接管理**:
+
+- 自动重连机制：最多重连 3 次，间隔 3 秒
+- 组件卸载时自动断开连接
+- 支持注册消息处理器（progress/complete/error）
+- 通过 URL 中的 userId 标识用户
+
+**实时进度推送**:
+
+- 后端在处理文档时实时推送进度信息
+- 前端实时更新进度条和当前文档信息
+- 支持批量处理多个文档
+
+**消息格式**:
+
+- 所有消息包含 `type` 和 `data` 字段
+- `type` 标识消息类型（progress/complete/error）
+- `data` 包含具体的业务数据
+
+**错误处理**:
+
+- 连接失败时显示用户友好的错误提示
+- 处理过程中发生错误时自动断开连接
+- 支持错误码和错误消息的传递
+
 ## 缓存策略
 
 为了提高性能，系统实现了以下缓存策略：
@@ -1045,11 +1171,12 @@ await knowledgeBaseApi.uploadDocuments({
 
 ## 版本历史
 
-| 版本   | 日期       | 说明                           |
-| ------ | ---------- | ------------------------------ |
-| v1.2.0 | 2024-03-01 | 新增文件解析分段接口（接口12） |
-| v1.1.0 | 2024-03-01 | 新增文档上传向导接口（接口11） |
-| v1.0.0 | 2024-02-28 | 初始版本，完成基础 CRUD 功能   |
+| 版本   | 日期       | 说明                                                      |
+| ------ | ---------- | --------------------------------------------------------- |
+| v1.3.0 | 2024-03-01 | 新增 WebSocket 实时通信，替换 HTTP 为 WebSocket（接口12） |
+| v1.2.0 | 2024-03-01 | 新增文件解析分段接口（接口12）                            |
+| v1.1.0 | 2024-03-01 | 新增文档上传向导接口（接口11）                            |
+| v1.0.0 | 2024-02-28 | 初始版本，完成基础 CRUD 功能                              |
 
 ## 联系方式
 
